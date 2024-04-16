@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <AiEsp32RotaryEncoder.h>
+#include <driver/dac.h>
 
 /*
 connecting Rotary encoder
@@ -28,6 +29,8 @@ VCC                    any microcontroler output pin - but set also ROTARY_ENCOD
 #endif
 #define ROTARY_ENCODER_VCC_PIN -1 /* 27 put -1 of Rotary encoder Vcc is connected directly to 3,3V; else you can use declared output pin for powering rotary encoder */
 
+constexpr dac_channel_t ANALOG_OUTPUT_PIN = DAC_CHANNEL_1;
+
 // depending on your encoder - try 1,2 or 4 to get expected behaviour
 // #define ROTARY_ENCODER_STEPS 1
 // #define ROTARY_ENCODER_STEPS 2
@@ -50,24 +53,14 @@ void rotary_onButtonClick()
   Serial.println(" milliseconds after restart");
 }
 
-void rotary_loop()
-{
-  // dont print anything unless value changed
-  if (rotaryEncoder.encoderChanged())
-  {
-    Serial.print("Value: ");
-    Serial.println(rotaryEncoder.readEncoder());
-  }
-  if (rotaryEncoder.isEncoderButtonClicked())
-  {
-    rotary_onButtonClick();
-  }
-}
-
 void IRAM_ATTR readEncoderISR()
 {
   rotaryEncoder.readEncoder_ISR();
 }
+
+constexpr bool circleValues = true;
+constexpr int minValue = 0;
+constexpr int maxValue = 4096;
 
 void setup()
 {
@@ -76,24 +69,52 @@ void setup()
   // we must initialize rotary encoder
   rotaryEncoder.begin();
   rotaryEncoder.setup(readEncoderISR);
-  // set boundaries and if values should cycle or not
-  // in this example we will set possible values between 0 and 1000;
-  bool circleValues = false;
-  rotaryEncoder.setBoundaries(0, 1000, circleValues); // minValue, maxValue, circleValues true|false (when max go to min and vice versa)
 
-  /*Rotary acceleration introduced 25.2.2021.
-   * in case range to select is huge, for example - select a value between 0 and 1000 and we want 785
-   * without accelerateion you need long time to get to that number
-   * Using acceleration, faster you turn, faster will the value raise.
-   * For fine tuning slow down.
-   */
-  // rotaryEncoder.disableAcceleration(); //acceleration is now enabled by default - disable if you dont need it
-  rotaryEncoder.setAcceleration(250); // or set the value - larger number = more accelearation; 0 or 1 means disabled acceleration
+  rotaryEncoder.setBoundaries(minValue, maxValue, circleValues);
+  rotaryEncoder.disableAcceleration();
+  rotaryEncoder.setAcceleration(0);
 }
+
+int64_t previousPosition = 0;
+int64_t previousStep = 0;
+int64_t previousTimeMS = 0;
+constexpr int minimumOutputIntervalMS = 10; // print rotary output every Xms
 
 void loop()
 {
-  // in loop call your custom function which will process rotary encoder values
-  rotary_loop();
-  delay(50); // or do whatever you need to do...
+
+  u_int64_t currentTimeMS = 0;
+  int64_t step = rotaryEncoder.encoderChanged();
+  if (abs(step) > 0)
+  {
+    int64_t currentPosition = rotaryEncoder.readEncoder();
+    uint8_t currentAnalogValue = map(currentPosition, minValue, maxValue, 0, 255);
+    dac_output_voltage((dac_channel_t)0, currentAnalogValue);
+    dac_output_voltage((dac_channel_t)1, currentAnalogValue);
+
+    currentTimeMS = millis();
+    int64_t dt = currentTimeMS - previousTimeMS;
+
+    Serial.print(currentTimeMS);
+    Serial.print(",");
+    Serial.print(previousTimeMS);
+    Serial.print(",");
+    Serial.print(dt);
+    Serial.print(",");
+    Serial.print(currentPosition);
+    Serial.print(",");
+    Serial.print(previousPosition);
+    Serial.print(",");
+    Serial.print(step);
+    Serial.print(",");
+    Serial.print(currentAnalogValue);
+
+    Serial.print("\n");
+
+    previousPosition = currentPosition;
+    previousStep = step;
+    previousTimeMS = currentTimeMS;
+  }
+
+  delay(minimumOutputIntervalMS);
 }
