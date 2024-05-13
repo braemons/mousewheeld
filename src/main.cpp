@@ -78,23 +78,52 @@ void setup()
 int64_t previousPosition = 0;
 int64_t previousStep = 0;
 int64_t previousTimeMS = 0;
-constexpr int minimumOutputIntervalMS = 10; // print rotary output every Xms
+constexpr int minimumOutputIntervalMS = 1;
+
+enum Commands : int8_t
+{
+  kNoCommand = -1,
+  kStartAcquisition = 0,
+  kStopAcquisition = 1,
+  kGetCurrentPosition = 2,
+
+};
+int incomingByte = 0; // for incoming serial data
+
+struct DataPoint
+{
+  u_int64_t currentTimeMS;
+  int64_t position;
+  int64_t step;
+  int64_t dt;
+} output;
 
 void loop()
 {
 
-  u_int64_t currentTimeMS = 0;
-  int64_t step = rotaryEncoder.encoderChanged();
-  if (abs(step) > 0)
+  incomingByte = kNoCommand;
+  if (Serial.available() > 0)
   {
-    int64_t currentPosition = rotaryEncoder.readEncoder();
-    uint8_t currentAnalogValue = map(currentPosition, minValue, maxValue, 0, 255);
-    dac_output_voltage((dac_channel_t)0, currentAnalogValue);
-    dac_output_voltage((dac_channel_t)1, currentAnalogValue);
+    // read the incoming byte:
+    incomingByte = Serial.read();
+  }
 
-    currentTimeMS = millis();
+  u_int64_t currentTimeMS = 0;
+  // int64_t step = rotaryEncoder.encoderChanged();
+
+  int64_t currentPosition = rotaryEncoder.readEncoder();
+  uint8_t currentAnalogValue = map(currentPosition, minValue, maxValue, 0, 255);
+  dac_output_voltage((dac_channel_t)0, currentAnalogValue);
+  dac_output_voltage((dac_channel_t)1, currentAnalogValue);
+
+  currentTimeMS = millis();
+
+  if (incomingByte > 0)
+  {
+    int64_t step = currentPosition - previousPosition;
     int64_t dt = currentTimeMS - previousTimeMS;
 
+    // print out the current you read:
     Serial.print(currentTimeMS);
     Serial.print(",");
     Serial.print(previousTimeMS);
@@ -108,11 +137,9 @@ void loop()
     Serial.print(step);
     Serial.print(",");
     Serial.print(currentAnalogValue);
-
     Serial.print("\n");
 
     previousPosition = currentPosition;
-    previousStep = step;
     previousTimeMS = currentTimeMS;
   }
 
