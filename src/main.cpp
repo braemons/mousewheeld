@@ -29,7 +29,7 @@ VCC                    any microcontroler output pin - but set also ROTARY_ENCOD
 #endif
 #define ROTARY_ENCODER_VCC_PIN -1 /* 27 put -1 of Rotary encoder Vcc is connected directly to 3,3V; else you can use declared output pin for powering rotary encoder */
 
-constexpr dac_channel_t ANALOG_OUTPUT_PIN = DAC_CHANNEL_1;
+#define BAUDRATE 460800
 
 // depending on your encoder - try 1,2 or 4 to get expected behaviour
 // #define ROTARY_ENCODER_STEPS 1
@@ -64,9 +64,10 @@ constexpr int maxValue = 65536;
 
 void setup()
 {
-  Serial.begin(115200);
+  Serial.begin(BAUDRATE);
 
-  // we must initialize rotary encoder
+  dac_output_enable(DAC_CHANNEL_1);
+
   rotaryEncoder.begin();
   rotaryEncoder.setup(readEncoderISR);
 
@@ -85,28 +86,28 @@ enum Commands : int8_t
   kStartAcquisition = 1,
 };
 
-char inputBuffer[256];
+char inputBuffer[32];
 
 void loop()
 {
 
-  for (int i = 0; i < 256; ++i)
-  {
-    inputBuffer[i] = 0;
-  }
-
   uint16_t currentPosition = rotaryEncoder.readEncoder();
-  uint8_t currentAnalogValue = map(currentPosition, minValue, maxValue, 0, 255);
-  dac_output_voltage((dac_channel_t)0, currentAnalogValue);
-  dac_output_voltage((dac_channel_t)1, currentAnalogValue);
 
-  while (auto nBytesAvailable = Serial.available() > 0)
+  // analog output
+  uint8_t currentAnalogValue = map(currentPosition, minValue, maxValue, 0, 255);
+  dac_output_voltage(DAC_CHANNEL_1, currentAnalogValue);
+
+  // triggered serial output
+  char byte = 0;
+  const int maxReads = 100;
+  int counter = 0;
+  while (Serial.available() > 0 && counter < maxReads)
   {
-    auto nBytesRead = Serial.readBytes(inputBuffer, nBytesAvailable);
+    byte = Serial.read();
+    ++counter;
   }
 
-  // for now, any non-zero input will trigger output
-  if (inputBuffer[0] == 0)
+  if (byte == 0)
     return;
 
   u_int64_t currentTimeMS = millis();
@@ -115,19 +116,14 @@ void loop()
 
   Serial.print(currentTimeMS);
   Serial.print(",");
-  Serial.print(previousTimeMS);
-  Serial.print(",");
   Serial.print(dt);
   Serial.print(",");
   Serial.print(currentPosition);
   Serial.print(",");
-  Serial.print(previousPosition);
-  Serial.print(",");
   Serial.print(step);
-  Serial.print(",");
-  Serial.print(currentAnalogValue);
   Serial.print("\n");
 
+  // store previous values
   previousPosition = currentPosition;
   previousTimeMS = currentTimeMS;
 }
