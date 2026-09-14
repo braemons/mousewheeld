@@ -1,7 +1,8 @@
 # mousewheeld — the plan
 
 > **Status:** plan. Nothing here is built. The preliminary ESP32 sketch
-> (`joschaschmiedt/mouse_wheel`) is not carried over: it is a hand-knob encoder
+> in `rotary-encoder/` (imported with its history from `joschaschmiedt/mouse_wheel`)
+> is kept for reference and not built on: it is a hand-knob encoder
 > library with a 16-bit position, polled on any received byte, and none of it
 > survives the design below. Milestones and their state are at the end.
 
