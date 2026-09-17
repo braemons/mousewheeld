@@ -1,0 +1,82 @@
+# The physical rig: which board, which pins, and what a count is worth.
+#
+# Changes when the hardware does, not per session. Installed at
+# /etc/braemons/mousewheeld-rig-config.toml, beside vstimd's own rig config, and
+# marked as a config file by the package: an upgrade never overwrites it.
+#
+# **The daemon rewrites this file** when a calibration is applied, because the
+# calibration belongs to the rig and there is one copy of it. Comments are not
+# preserved through that rewrite — which is the usual cost of a file that is
+# both edited by people and written by a program, and it is worth it here
+# because the alternative is two copies of a hardware fact.
+
+# ── The board ────────────────────────────────────────────────────────────────
+[device]
+# The stable name the udev rule creates, not /dev/ttyACM0: the raw name moves
+# when somebody adds a second board. Empty means "no board on this host", which
+# is a normal state for a development box and not an error.
+port = "/dev/mousewheel"
+baud = 1000000
+
+# ── Rates ────────────────────────────────────────────────────────────────────
+[stream]
+# What the board is asked to send. Samples are cumulative counts, so a lower
+# rate costs resolution and never distance.
+rate_hz = 500
+
+# The refresh rate of the display this wheel drives, if it drives one.
+#
+# Keep rate_hz ABOVE it. At or below, some frames see no new sample and the next
+# sees two: the corridor advances in uneven steps, at exactly the speeds a
+# running animal produces, and every individual sample is correct. Set 0 if no
+# camera follows this wheel.
+display_hz = 120
+
+# How long the in-memory path stays queryable.
+ring_minutes = 30
+
+# ── Publishing ───────────────────────────────────────────────────────────────
+[publish]
+# The shared-memory segment vstimd reads every frame. vstimd's own rig config
+# names this same string in [[input.device]] and never learns who writes it.
+# The daemon publishes CENTIMETRES here, so vstimd's axis keeps scale = 1.0.
+shm_name = "/vstimd_wheel"
+
+# The ZMQ PUB port, after vstimd's 5555 (REP) and 5556 (events).
+event_port = 5557
+
+# ── Calibration ──────────────────────────────────────────────────────────────
+# Counts per centimetre of travel AT THE SURFACE THE ANIMAL RUNS ON. Measure it
+# — the console's Calibration panel walks the procedure — rather than computing
+# it from the nominal diameter: what a corridor position is made of is how far
+# the feet travelled, on whatever tread is on the drum, and that is a few
+# percent off the arithmetic every time.
+#
+# counts_per_rev and diameter_cm are kept for the arithmetic a measurement is
+# checked against. A whole-number ratio between measured and nominal is a
+# decoder counting ×1 or ×2 where the counts-per-rev assumed ×4 — it looks
+# exactly like a wheel of the wrong size, and the daemon says so.
+[[axis]]
+name = "wheel"
+counts_per_cm = 86.920
+counts_per_rev = 4096
+diameter_cm = 15.0
+invert = false
+
+# ── Output lines ─────────────────────────────────────────────────────────────
+# What a zone set names when it says "line": "zone_goal". Zone sets are dynamic
+# and per session; this map is the wiring, and changes when the wiring does.
+#
+# A rig with no lines here refuses every zone set, by name, at arm — because a
+# zone names a line and this rig has none.
+[[line]]
+name = "zone_goal"
+index = 0
+pin = 5
+safe_high = false
+
+[[line]]
+name = "zone_region"
+index = 1
+pin = 6
+safe_high = false

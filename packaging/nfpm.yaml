@@ -1,0 +1,54 @@
+# One package definition, deb and rpm from the same file — vstimd's packaging,
+# for the reason the plan gives for the whole stack: a braemons developer who
+# has packaged one of these has packaged all of them.
+#
+#   nfpm package -f packaging/nfpm.yaml -p deb -t dist/
+#   nfpm package -f packaging/nfpm.yaml -p rpm -t dist/
+#
+# Build the binary first: `cargo build --release`. The console panels are
+# embedded in it, so the package is a binary, a unit, a udev rule and a config —
+# there is no web root to serve and nothing to keep in step with it.
+
+name: mousewheeld
+arch: ${ARCH}
+platform: linux
+version: ${VERSION}
+section: science
+priority: optional
+maintainer: braemons
+description: |
+  The locomotion input of a braemons rig: a running wheel, read and published.
+  Publishes position into shared memory for vstimd to read every frame, fires
+  distance-triggered TTL lines through its board, and serves its own console
+  panels at /elements/.
+vendor: braemons
+homepage: https://github.com/braemons/mousewheeld
+license: AGPL-3.0-or-later
+
+depends:
+  - systemd
+
+contents:
+  - src: ../target/release/mousewheeld
+    dst: /usr/bin/mousewheeld
+    file_info:
+      mode: 0755
+
+  - src: ./mousewheeld.service
+    dst: /lib/systemd/system/mousewheeld.service
+
+  - src: ./99-mousewheeld.rules
+    dst: /lib/udev/rules.d/99-mousewheeld.rules
+
+  - src: ./mousewheeld.sysusers.conf
+    dst: /usr/lib/sysusers.d/mousewheeld.conf
+
+  # The rig's own settings: never replaced by an upgrade, because the
+  # calibration in it was measured on this wheel.
+  - src: ./mousewheeld-rig-config.toml
+    dst: /etc/braemons/mousewheeld-rig-config.toml
+    type: config|noreplace
+
+scripts:
+  postinstall: ./postinstall.sh
+  preremove: ./preremove.sh

@@ -1,0 +1,43 @@
+[Unit]
+Description=mousewheeld — the locomotion input of a braemons rig
+Documentation=https://github.com/braemons/mousewheeld
+# The board arrives over USB, and on a rig it is usually already there. Wanting
+# rather than requiring it: a daemon that refuses to start without a board
+# cannot serve the console panel that says the board is missing.
+Wants=dev-mousewheel.device
+After=network.target
+
+[Service]
+Type=exec
+User=mousewheeld
+Group=mousewheeld
+# The serial port is reached through the group a udev rule puts it in, not by
+# running as root.
+SupplementaryGroups=dialout
+ExecStart=/usr/bin/mousewheeld serve --bind 0.0.0.0 --port 8082
+Restart=always
+RestartSec=2
+
+# The real-time thread raises its own priority (SCHED_FIFO) where it is allowed
+# to. Granted here rather than asked for at runtime, so an unprivileged daemon
+# still gets the one thing it genuinely needs; without it mousewheeld logs a
+# warning and keeps running on SCHED_OTHER.
+AmbientCapabilities=CAP_SYS_NICE
+CapabilityBoundingSet=CAP_SYS_NICE
+
+# systemd creates and owns /var/lib/mousewheeld — the zone-set store.
+StateDirectory=mousewheeld
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictRealtime=no
+# The calibration is persisted in the rig config, and applying a measurement
+# rewrites it — so this one directory is writable while the rest of /etc is not.
+ReadWritePaths=/etc/braemons
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,15 @@
+[workspace]
+resolver = "2"
+members = ["daemon"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/braemons/mousewheeld"
+
+[profile.release]
+# The real-time thread's per-sample path is the reason this daemon is native.
+# Debug symbols stay in the release build: a stall on a rig is diagnosed where
+# it happens, and a stripped binary costs more than the disk it saves.
+debug = true

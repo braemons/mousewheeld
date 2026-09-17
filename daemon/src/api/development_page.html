@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>mousewheeld</title>
+    <style>
+      body {
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        margin: 0;
+        padding: 1.5rem;
+        background: #eef1f4;
+        color: #16202a;
+      }
+      h1 { font-size: 1.1rem; margin: 0 0 0.3rem; }
+      p.lede { color: #667a8a; margin: 0 0 1.2rem; max-width: 62rem; }
+      p.lede a { color: #1f6feb; }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(30rem, 1fr));
+        gap: 1rem;
+        align-items: start;
+      }
+    </style>
+    <script type="module" src="/elements/mousewheeld.js"></script>
+  </head>
+  <body>
+    <h1>mousewheeld</h1>
+    <p class="lede">
+      This page stands in for the console: it mounts the panels this daemon serves and holds no
+      logic of its own, which is the point of the <code>/elements/</code> contract. A real console
+      imports <code>/elements/mousewheeld.js</code> from here and lays the same panels out beside
+      another daemon's. The API this is all talking to is described at
+      <a href="/api/openapi.json">/api/openapi.json</a>.
+    </p>
+    <div class="grid">
+      <mousewheeld-device base=""></mousewheeld-device>
+      <mousewheeld-trace base=""></mousewheeld-trace>
+      <mousewheeld-calibration base=""></mousewheeld-calibration>
+      <mousewheeld-zones base=""></mousewheeld-zones>
+      <mousewheeld-monitor base=""></mousewheeld-monitor>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,15 @@
+{
+  "zone_set_version": 1,
+  "zones": [
+    {
+      "name": "goal",
+      "shape": "rect",
+      "axes": ["wheel"],
+      "metric": "displacement",
+      "min_cm": ["$goal_cm"],
+      "max_cm": [null],
+      "fire": "once",
+      "output": { "line": "zone_goal", "action": "pulse", "ms": 10 }
+    }
+  ]
+}

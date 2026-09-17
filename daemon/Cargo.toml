@@ -1,0 +1,35 @@
+[package]
+name = "mousewheeld"
+description = "The locomotion input of a braemons rig: a running wheel, read and published"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "mousewheeld"
+path = "src/main.rs"
+
+[dependencies]
+# vstimd's stack, deliberately: a braemons developer who has read vstimd's
+# server can read this one, and the packaging is vstimd's.
+axum = { version = "0.8", features = ["ws"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync", "time"] }
+tower-http = { version = "0.6", features = ["cors"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+clap = { version = "4", features = ["derive"] }
+# The OpenAPI document is derived from the same types the API and the files
+# use, so the clients are checked against the daemon rather than against a
+# description of it.
+utoipa = { version = "5", features = ["axum_extras"] }
+rust-embed = "8"
+mime_guess = "2"
+log = "0.4"
+env_logger = "0.11"
+thiserror = "2"
+rand = "0.8"
+
+[dev-dependencies]
+tempfile = "3"

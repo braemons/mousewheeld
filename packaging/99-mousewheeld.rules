@@ -1,0 +1,23 @@
+# The wheel's microcontroller, by what it is rather than by which USB port it
+# was plugged into: `/dev/ttyACM0` moves when somebody adds a second board, and
+# a rig config that names a moving target is a rig that breaks on a Monday.
+#
+# `/dev/mousewheel` is the stable name; put that in the rig config's
+# [device] port. Adjust the idVendor/idProduct for the board actually in use —
+# these are Teensy 4.1 (PJRC) and the common CP210x / CH340 bridges an ESP32
+# board arrives with.
+
+# Teensy 4.1, native USB serial
+SUBSYSTEM=="tty", ATTRS{idVendor}=="16c0", ATTRS{idProduct}=="0483", \
+  SYMLINK+="mousewheel", GROUP="dialout", MODE="0660", TAG+="systemd", \
+  ENV{SYSTEMD_ALIAS}="/dev/mousewheel"
+
+# ESP32 boards, through a CP210x bridge
+SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", \
+  SYMLINK+="mousewheel", GROUP="dialout", MODE="0660", TAG+="systemd", \
+  ENV{SYSTEMD_ALIAS}="/dev/mousewheel"
+
+# ESP32 boards, through a CH340 bridge
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", \
+  SYMLINK+="mousewheel", GROUP="dialout", MODE="0660", TAG+="systemd", \
+  ENV{SYSTEMD_ALIAS}="/dev/mousewheel"

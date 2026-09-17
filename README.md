@@ -1,0 +1,96 @@
+# mousewheeld
+
+The **locomotion input** of a braemons rig: a rotary encoder on a running wheel,
+read by a microcontroller and published to whoever needs to know how far the
+animal went.
+
+It has two consumers that want opposite things — [vstimd](https://github.com/braemons/vstimd)
+moves a camera through a corridor and needs the position *every frame*, within
+the frame; [triald](https://github.com/braemons/triald) records what happened
+and needs the path *once per trial*, exactly. And one job neither can do:
+**trigger zones** — "the animal has run 200 cm" — decided on the device, in the
+scan that sees the count, and put on a TTL line.
+
+```
+   console ──▶│   mousewheeld    │──▶ ZMQ PUB   samples · zone hits  (anyone, any host)
+   /elements  │ control │ data   │──▶ recording (the path of record)
+              └──┬───────────┬───┘
+   USB · NDJSON  │           │  vinput shm  /vstimd_wheel  ──▶ vstimd, every frame
+   · CRC         │           ▼
+              ┌──┴─────────┐
+              │ firmware   │── TTL ──▶ statemachined · daqd
+              │ counts · zones · analog out
+              └────────────┘
+```
+
+## Read this first
+
+- **[`dev/PLAN.md`](dev/PLAN.md)** — the design, and the reasoning behind each
+  decision. Milestones and their state are at the end.
+- The rule everything here follows is `contracts/INTERACTIONS.md` §2:
+  **a participant publishes what it observed and commands nobody.** mousewheeld
+  has no client of any other daemon, no `vstimd_address`, no `triald_base_url`.
+  vstimd reads a shared-memory segment whose layout it defines and never learns
+  who writes it; triald commands this daemon and subscribes to what it says.
+
+## What is built
+
+| | |
+|---|---|
+| **The API**, and the types behind it | `daemon/src/model/`, `daemon/src/api/` — generated into `/api/openapi.json`, so a client is checked against the daemon and not a description of it |
+| **The zone-set store and compiler** | centimetres in, integer counts out, against a named calibration |
+| **Calibration**, with its guided measurement | `daemon/src/api/calibration_routes.rs` |
+| **The console panels** | `web/elements/` — five custom elements, no build step, served by this daemon at its own version |
+| **Packaging** | `packaging/` — nfpm, a systemd unit, a udev rule, sysusers |
+| a wheel on a thread | `--simulate`, standing in for firmware that does not exist yet |
+
+**Not built:** the firmware, the serial link and the real-time thread, the
+vinput producer, the ZMQ publisher, the recording, marks and paths, the Python
+client. Everything that needs a board is M1; everything else is reachable
+without one.
+
+## Running it
+
+```sh
+make dev          # a wheel on a thread; panels at http://127.0.0.1:8082/
+make check        # build, clippy, tests
+make openapi      # dist/openapi.json, generated from the types
+make package      # deb and rpm
+```
+
+`make dev` runs a debug build on purpose: `rust-embed` serves `web/elements/`
+from disk there, so editing a panel and reloading the page is enough. A release
+binary embeds them, and a panel that did not change after an edit is almost
+always a release build.
+
+On a rig:
+
+```sh
+systemctl enable --now mousewheeld     # after editing /etc/braemons/mousewheeld-rig-config.toml
+```
+
+## Calibrating
+
+**Measure it; do not compute it from the wheel's nominal diameter.** What a
+corridor position is made of is how far the *feet* travelled — inside the rim,
+on whatever tread is glued to it — and that is a few percent off the arithmetic
+every time. The Calibration panel walks the procedure: name a distance, roll the
+wheel that far by hand in one continuous motion, and read the measurement
+against the configured value. A whole-number ratio between them is a decoder
+counting ×1 or ×2 where the counts-per-revolution assumed ×4; the daemon says so
+before you apply it.
+
+The calibration lives here and nowhere else. Everything this daemon publishes is
+in **centimetres**, so vstimd's `[[input.device.axis]]` keeps `scale = 1.0` and
+restates nothing.
+
+## Security
+
+Like every other daemon on a braemons rig: **no authentication, CORS open, and
+the rig network is the security boundary.** That is a deliberate choice with one
+precondition — the rig network must be *isolated*, not merely behind an
+institute firewall.
+
+## Licence
+
+AGPL-3.0-or-later, for the whole repository, firmware included.
