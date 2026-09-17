@@ -1,10 +1,13 @@
 # mousewheeld — the plan
 
-> **Status:** a plan, with two pieces built out of order. No firmware and no
-> daemon yet; what exists is the **web client** (`web/elements/`, five console
-> panels) and the **mock daemon** they are driven against (`dev/mock/`), built
-> early because a UI is cheaper to get wrong on screen than in a design
-> document — and it did change the API: see *lost_before* in *The API*.
+> **Status:** built from the top down, which is not the order the milestones are
+> numbered in. **No firmware yet** — that is the only part that needs a board —
+> but the daemon's **public surface** is running: the API and the types behind
+> it, the zone-set store and compiler, the calibration and its measurement
+> procedure, the config, the five console panels, and the packaging. Behind the
+> seam where the serial link will go, `--simulate` runs a wheel on a thread.
+> Building it this way round has already changed the design twice: see
+> *lost_before* in *The API* and the armed bounds in *Trigger zones*.
 > `dev/throwaway/` holds the host producer that drives vstimd from the old
 > sketch today. The preliminary ESP32 sketch in `rotary-encoder/` (imported
 > with its history from `joschaschmiedt/mouse_wheel`) is kept for reference and
@@ -215,6 +218,13 @@ As authored:
   ]
 }
 ```
+
+**An armed zone reports the bounds it is actually comparing against.**
+`GET /api/zones` carries each armed zone's resolved `min_cm`/`max_cm` — the
+`$name`s substituted, the counts on the board converted back. Without them a UI
+can only draw the set as *stored*, and a set armed at 180 cm by a patch appears
+at zero: a picture of a zone that is not running. This was added because the
+track diagram drew exactly that.
 
 Semantics, and they are wire-visible so they are specified:
 
@@ -576,12 +586,12 @@ mousewheeld/
 │       ├── relay/             ZMQ SUB → local vinput shm
 │       └── mdns_service_advertisement.rs
 ├── web/elements/              mousewheeld.js and its panels (embedded) — BUILT
+├── Makefile                   build · check · dev · openapi · package — BUILT
 ├── client/python/             mousewheeld-client
 ├── tests/core/                firmware core, mirrors firmware/core
 ├── packaging/                 nfpm · systemd · udev · sysusers · setcap
 └── dev/
     ├── PLAN.md                this file
-    ├── mock/                  a stand-in daemon for the elements — BUILT, and deleted at M2
     └── throwaway/             the ESP32 sketch into vstimd's shm — BUILT, and deleted at M2
 ```
 
@@ -783,20 +793,19 @@ Two things the panels settled about the API rather than merely displayed:
   would be a second copy of that schema, drifting from the first field added.
   What the panel owes instead is the diagram and `validate`.
 
-### Developing without a daemon
+### Developing without a board
 
-`dev/mock/mousewheeld_mock.py` — standard library only, no dependencies —
-answers the routes in *The API* with a simulated wheel behind them: an animal
-that runs in bouts, two velocities that differ the way the real two will, lost
-samples, zones that fire on entry, and the wire log both directions. It serves
-`/elements/` and a page that mounts all five panels, so the UI can be built and
-looked at now instead of at M6.
+`mousewheeld serve --simulate` — `make dev` — runs a wheel on a thread behind
+the same seam the serial link will occupy, and serves the panels from the same
+binary a rig would. The simulation is not decoration: it evaluates zones **in
+counts, off the real compiler's output**, exactly as the firmware's scan will,
+which is what makes the compiler's arithmetic testable before a board exists. It
+also injects what a happy path never shows — lost samples — because a consumer
+that has never seen a gap has never been tested.
 
-**It is deleted the day the real daemon serves `/elements/`.** It is a fixture,
-not a second implementation: it does not persist, does not talk to a board, and
-its answers are hand-written rather than derived from the Rust types. At M2 the
-panels are re-checked against `/api/openapi.json`, which is the copy that cannot
-drift.
+There was a Python mock here while the panels were being written, and it is
+gone: the daemon serves `/elements/` now, and two implementations of one API is
+one more than anybody should maintain.
 
 ---
 
@@ -883,10 +892,10 @@ contract. Each is rewritten here to this project's shapes.
 |---|---|---|
 | **M0** | ⬜ | Firmware core: counter extension, origin/odometer, zones, rings, framing, JSON reader, fixed writers. Host tests green under gcc/clang and sanitizers |
 | **M1** | ⬜ | Teensy 4.1 HAL, then ESP32 HAL. Analog output, flash, debug mode. **Scan rate and link cost measured and asserted** |
-| **M2** | ⬜ | Daemon: real-time thread (link, parser, clock, continuity, ring, recording) and the control side — device session, state, stream, calibration, config, marks, OpenAPI. Python client |
+| **M2** | 🟨 | Daemon. **Built:** the control side — API and model types, zone-set store and compiler with per-trial patches, calibration and its measurement procedure, config and line map, generated OpenAPI, `/elements/` embedded, the device seam with `--simulate`. **Left:** the real-time thread (serial link, framing and CRC, sample parser, clock correlation, continuity), marks and the path ring, recording, and the Python client |
 | **M3** | ⬜ | vinput producer, through vstimd's `vinput` crate (which exists, with `LinearNav3D`, and is waiting for a writer). Encoder-to-photon latency measured |
 | **M4** | ⬜ | ZMQ PUB with `events.proto`; `mousewheeld relay` |
 | **M5** | ⬜ | Zones end to end: line map from the rig config, store, patches, compiler, arm, flash, TTL into statemachined and daqd |
-| **M6** | 🟨 | Web client: the five console elements are **written and driven against the mock** (`web/elements/`, `dev/mock/`). Left: serving them from the daemon's binary with `rust-embed`, re-checking them against the generated OpenAPI, mDNS, packaging |
+| **M6** | 🟨 | Web client and packaging. **Built:** the five console elements, served from the binary with `rust-embed`; nfpm, the systemd unit with `CAP_SYS_NICE`, the udev rule and sysusers. **Left:** mDNS `_mousewheeld._tcp`, and the console's `SERVICE_TYPES` line |
 | **M7** | ⬜ | triald: marks, `mousewheel_zone_set`, contribution; a contracts end-to-end stage |
 | — | ⬜ | 2-D ball: optical sensor HAL, ball calibration, `x`/`y`/`yaw` descriptor — when the hardware exists |
