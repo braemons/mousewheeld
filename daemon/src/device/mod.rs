@@ -1,36 +1,168 @@
-//! The board behind the API — and, until the firmware exists, a stand-in for it.
+//! The board, as the rest of the daemon sees it.
 //!
-//! **The seam is the point.** Everything above this module talks to a device
-//! through `Device`: read the counts, arm a compiled set, move the origin,
-//! watch the wire. What is under it today is a **simulated wheel** on a thread,
-//! because there is no firmware yet; what goes under it at M2 is the real-time
-//! thread with a serial port. The routes, the store, the compiler and the
-//! console panels do not know the difference and will not change when it is
-//! swapped.
+//! Everything above this module talks to a device through [`Device`]: read the
+//! counts, arm a compiled set, move the origin, watch the wire. What is under
+//! it is a **serial port** — `docs/reference/protocol.md` over a file
+//! descriptor — and on a host with no board, a pty with [`board_simulator`] on
+//! the far end. The daemon runs the same code either way; only the descriptor
+//! differs.
 //!
-//! The simulation is not decoration. It evaluates zones **in counts**, off the
-//! compiler's output, exactly as the firmware's scan will: that is what makes
-//! the compiler's arithmetic testable before a board exists, and it is why an
-//! inverted interval or a wrong line map is caught here rather than on a rig.
-//! It also injects what a real link does and a happy path never shows — lost
-//! samples — because a consumer that has never seen a gap has never been tested.
+//! ## What this module owns, and what the board owns
+//!
+//! The board owns what must be decided in the scan that sees the count: its own
+//! origin, its own odometer, and **zone evaluation**. The host mirrors those
+//! numbers from the samples it receives, because the API reports them — and a
+//! mirror computed from the same stream is right whenever the stream is
+//! complete. When it is not, `seq_gaps` says so, rather than a distance quietly
+//! coming up short.
+//!
+//! The host owns two things the board cannot: the mapping from the device clock
+//! to `CLOCK_MONOTONIC`, and the **continuity offset** that keeps the published
+//! accumulator from stepping backwards across a board reset.
+//!
+//! ## Threads
+//!
+//! One reader thread per link, blocking on `read`. It parses, updates state
+//! under a mutex and broadcasts; it never waits on an HTTP handler. Commands go
+//! out through a second descriptor, from whichever thread asked.
+
+pub mod board_simulator;
 
 use std::collections::VecDeque;
+use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 use tokio::sync::broadcast;
 
+use crate::link::continuity::{ClockCorrelation, Continuity};
+use crate::link::framing::check;
+use crate::link::messages::{commands, Command, FromDevice, WireSample, WireZone};
+use crate::link::serial::{duplicate, open_port, pty_pair, LineReader, LineWriter};
 use crate::model::device::{
     Capacities, DeviceInfo, FlashedZoneSet, LinkStats, WireDirection, WireLevel, WireLine,
 };
-use crate::model::state::{AxisState, LinkHealth, LinkState, RigState, Sample, StreamFrame, ZoneHitEvent};
+use crate::model::state::{
+    AxisState, LinkHealth, LinkState, RigState, Sample, StreamFrame, ZoneHitEvent,
+};
 use crate::model::zone_set::{ArmOrigin, FireRule, ZoneMetric, ZoneStatus};
 use crate::zones::{CompiledZone, CompiledZoneSet};
 
-/// Which set is armed, and under what. Separate from the zones' own statuses
-/// because "nothing is armed" is one absence, not one per zone.
+/// The conversation — greetings, uploads, arms, refusals — and nothing else.
+/// Hours of it on a rig, because these are the lines somebody reads when the
+/// layers stop agreeing.
+const CONVERSATION_LINES: usize = 2000;
+/// Samples are kept separately and briefly. **Not tidiness:** at 500 Hz they
+/// fill any shared ring in seconds, and the greeting and the arm a person is
+/// actually looking for are gone before they open the panel. The monitor hides
+/// them by default and shows the recent ones on request; this is what "recent"
+/// can honestly mean on a stream that fast.
+const SAMPLE_LINES: usize = 200;
+const STALE_AFTER: Duration = Duration::from_millis(500);
+/// How long an arm waits for the board to say `armed`. Long enough for a link
+/// that is merely busy; short enough that an HTTP handler does not hang on a
+/// board that has gone away.
+const ARM_ACK_TIMEOUT: Duration = Duration::from_millis(750);
+/// The span the host's own velocity is measured over. Not the gap between two
+/// samples: a wheel publishes whole counts, so a slope across one 2 ms step is
+/// mostly quantisation.
+const VELOCITY_SPAN_NS: u64 = 250_000_000;
+const PROTOCOL_VERSION: u32 = 1;
+
+/// One axis as the rig config describes it.
+#[derive(Clone)]
+pub struct AxisSetup {
+    pub name: String,
+    pub counts_per_cm: f64,
+    pub invert: bool,
+}
+
+/// What the daemon is attached to.
+pub enum Backend {
+    /// No board. Every route that needs one refuses with `no_device` rather
+    /// than inventing a reading.
+    Absent,
+    /// A real serial port, from the rig config.
+    Port { path: String, baud: u32 },
+    /// A pty with a simulated board on the far end — the same link code, and a
+    /// board that can be wrong in the ways a real one is.
+    Simulated,
+}
+
+struct AxisRuntime {
+    name: String,
+    counts_per_cm: f64,
+    invert: bool,
+    /// The published accumulator: the device's counts plus the continuity
+    /// offset. The number a corridor is driven from.
+    counts: i64,
+    /// The host's mirror of the board's origin.
+    origin: i64,
+    distance: i64,
+    host_velocity_cm_s: f64,
+    device_velocity_cm_s: f64,
+}
+
+struct ArmedSet {
+    set: CompiledZoneSet,
+    arm_id: u32,
+    label: Option<String>,
+    /// Per zone, in the set's own order: where it fired, if it has.
+    fired_at: Vec<Option<i64>>,
+    /// The board said `armed`.
+    confirmed: bool,
+}
+
+struct Inner {
+    axes: Vec<AxisRuntime>,
+    connected: bool,
+    board: String,
+    firmware: String,
+    protocol_version: u32,
+    max_line: usize,
+    capacities: Capacities,
+    flashed: Option<FlashedZoneSet>,
+    connection_count: u64,
+    last_error: Option<String>,
+    message_id: u16,
+
+    seq: u64,
+    seq_gaps: u64,
+    ring_drops: u64,
+    last_sample_at: Option<Instant>,
+    last_device_us: u64,
+    measured_rate_hz: f64,
+    history: VecDeque<(u64, i64)>,
+
+    clock: ClockCorrelation,
+    continuity: Continuity,
+    armed: Option<ArmedSet>,
+}
+
+/// One output line, as the wire carries it: an index, a pin and a safe level.
+/// Names stay host-side — the board holds no strings but the zone set's name.
+pub type WireLine2 = (u8, u8, bool);
+
+pub struct Device {
+    backend: Backend,
+    /// The rig's output line map, uploaded at every connect. The board comes up
+    /// with its outputs at compile-time defaults and has no memory of a wiring
+    /// it was told about before it was unplugged.
+    lines: Vec<WireLine2>,
+    inner: Mutex<Inner>,
+    /// Signalled when the board acknowledges an arm.
+    armed_ack: Condvar,
+    writer: Mutex<Option<LineWriter>>,
+    conversation: Mutex<VecDeque<WireLine>>,
+    samples: Mutex<VecDeque<WireLine>>,
+    frames: broadcast::Sender<StreamFrame>,
+    wire: broadcast::Sender<WireLine>,
+    running: Arc<AtomicBool>,
+    stream_rate_hz: u32,
+}
+
+/// Which set is armed, and under what.
 pub struct ArmSummary {
     pub zone_set: String,
     pub version: u32,
@@ -38,88 +170,17 @@ pub struct ArmSummary {
     pub label: Option<String>,
 }
 
-/// One axis as the rig config describes it, for [`Device::new`].
-pub struct AxisSetup {
-    pub name: String,
-    pub counts_per_cm: f64,
-    pub invert: bool,
-}
-
-/// What the daemon has to talk to.
-pub enum Backend {
-    /// No board, and no pretence of one. Every route that needs the device
-    /// refuses with `no_device` rather than inventing a reading.
-    Absent,
-    /// A wheel on a thread, for building against. `mousewheeld serve --simulate`.
-    Simulated,
-}
-
-const SCAN_HZ: f64 = 200.0;
-const WIRE_LOG_LINES: usize = 4000;
-const STALE_AFTER: Duration = Duration::from_millis(500);
-
-struct AxisRuntime {
-    name: String,
-    counts_per_cm: f64,
-    /// The encoder is wired the other way round. Applied here, to the counting
-    /// itself, so that nothing above this module carries a sign.
-    invert: bool,
-    counts: f64,
-    origin_counts: f64,
-    distance_counts: f64,
-    host_velocity_cm_s: f64,
-    device_velocity_cm_s: f64,
-}
-
-struct ZoneRuntime {
-    zone: CompiledZone,
-    inside: bool,
-    fired: bool,
-    armed: bool,
-    fired_at_counts: Option<i64>,
-}
-
-struct Inner {
-    axes: Vec<AxisRuntime>,
-    seq: u64,
-    seq_gaps: u64,
-    ring_drops: u64,
-    last_sample_at: Option<Instant>,
-    measured_rate_hz: f64,
-    connection_count: u64,
-    last_error: Option<String>,
-    armed: Option<ArmedSet>,
-    flashed: Option<FlashedZoneSet>,
-    /// The running animal, so the simulation has something to be.
-    resting: bool,
-    bout_ends_at: Instant,
-    target_speed_cm_s: f64,
-    next_loss_at: Instant,
-    history: VecDeque<(Instant, f64)>,
-}
-
-struct ArmedSet {
-    set: CompiledZoneSet,
-    arm_id: u32,
-    label: Option<String>,
-    zones: Vec<ZoneRuntime>,
-}
-
-pub struct Device {
-    backend: Backend,
-    inner: Mutex<Inner>,
-    wire_log: Mutex<VecDeque<WireLine>>,
-    frames: broadcast::Sender<StreamFrame>,
-    wire: broadcast::Sender<WireLine>,
-    running: AtomicBool,
-    capacities: Capacities,
-}
-
 impl Device {
-    pub fn new(backend: Backend, axes: Vec<AxisSetup>) -> Arc<Self> {
-        let now = Instant::now();
+    pub fn new(
+        backend: Backend,
+        axes: Vec<AxisSetup>,
+        lines: Vec<WireLine2>,
+        stream_rate_hz: u32,
+    ) -> Arc<Self> {
+        let count = axes.len();
         let device = Arc::new(Self {
             backend,
+            lines,
             inner: Mutex::new(Inner {
                 axes: axes
                     .into_iter()
@@ -127,47 +188,415 @@ impl Device {
                         name: axis.name,
                         counts_per_cm: axis.counts_per_cm,
                         invert: axis.invert,
-                        counts: 0.0,
-                        origin_counts: 0.0,
-                        distance_counts: 0.0,
+                        counts: 0,
+                        origin: 0,
+                        distance: 0,
                         host_velocity_cm_s: 0.0,
                         device_velocity_cm_s: 0.0,
                     })
                     .collect(),
+                connected: false,
+                board: String::new(),
+                firmware: String::new(),
+                protocol_version: 0,
+                max_line: 512,
+                capacities: Capacities { n_axes: 0, max_zones: 0, max_lines: 0, scan_hz: 0 },
+                flashed: None,
+                connection_count: 0,
+                last_error: None,
+                message_id: 0,
                 seq: 0,
                 seq_gaps: 0,
                 ring_drops: 0,
                 last_sample_at: None,
+                last_device_us: 0,
                 measured_rate_hz: 0.0,
-                connection_count: 0,
-                last_error: None,
-                armed: None,
-                flashed: None,
-                resting: true,
-                bout_ends_at: now,
-                target_speed_cm_s: 0.0,
-                next_loss_at: now + Duration::from_secs(6),
                 history: VecDeque::new(),
+                clock: ClockCorrelation::new(),
+                continuity: Continuity::new(count),
+                armed: None,
             }),
-            wire_log: Mutex::new(VecDeque::new()),
-            frames: broadcast::channel(1024).0,
+            armed_ack: Condvar::new(),
+            writer: Mutex::new(None),
+            conversation: Mutex::new(VecDeque::new()),
+            samples: Mutex::new(VecDeque::new()),
+            frames: broadcast::channel(4096).0,
             wire: broadcast::channel(1024).0,
-            running: AtomicBool::new(false),
-            capacities: Capacities {
-                n_axes: 2,
-                max_zones: 16,
-                max_lines: 8,
-                scan_hz: 5000,
-            },
+            running: Arc::new(AtomicBool::new(true)),
+            stream_rate_hz,
         });
-        if matches!(device.backend, Backend::Simulated) {
-            device.clone().spawn_simulation();
+        if let Err(problem) = device.clone().open_link() {
+            log::warn!("the device link did not open: {problem}");
         }
         device
     }
 
+    /// Open the port — or make a pty and put a simulated board on it — and
+    /// start the reader.
+    fn open_link(self: Arc<Self>) -> io::Result<()> {
+        let path = match &self.backend {
+            Backend::Absent => return Ok(()),
+            Backend::Port { path, baud } => {
+                let fd = open_port(path, *baud)?;
+                *self.writer.lock().unwrap() = Some(LineWriter::new(duplicate(&fd)?));
+                self.spawn_reader(LineReader::new(fd, 512));
+                path.clone()
+            }
+            Backend::Simulated => {
+                let counts_per_cm = self
+                    .inner
+                    .lock()
+                    .unwrap()
+                    .axes
+                    .first()
+                    .map(|axis| axis.counts_per_cm)
+                    .unwrap_or(86.92);
+                let (board_side, host_path) = pty_pair()?;
+                board_simulator::BoardSimulator::spawn(board_side, counts_per_cm)?;
+                let fd = open_port(host_path.to_str().unwrap_or_default(), 0)?;
+                *self.writer.lock().unwrap() = Some(LineWriter::new(duplicate(&fd)?));
+                self.spawn_reader(LineReader::new(fd, 512));
+                host_path.to_string_lossy().into_owned()
+            }
+        };
+        log::info!("device link open on {path}");
+        self.spawn_housekeeping();
+        // The greeting starts the conversation; everything else follows the
+        // `hello_ack` that answers it.
+        self.send(commands::hello(self.next_message_id(), PROTOCOL_VERSION));
+        Ok(())
+    }
+
+    /// Every few seconds: a `state` for the counters only the board knows, and
+    /// a `ping` when no sample has arrived to prove the link on its own.
+    fn spawn_housekeeping(self: &Arc<Self>) {
+        let device = self.clone();
+        std::thread::Builder::new()
+            .name("device-housekeeping".into())
+            .spawn(move || {
+                while device.running.load(Ordering::Relaxed) {
+                    std::thread::sleep(Duration::from_secs(5));
+                    if !device.connected() {
+                        continue;
+                    }
+                    device.send(commands::state(device.next_message_id()));
+                    let quiet = device
+                        .inner
+                        .lock()
+                        .unwrap()
+                        .last_sample_at
+                        .map(|at| at.elapsed() > Duration::from_secs(2))
+                        .unwrap_or(true);
+                    if quiet {
+                        device.send(commands::ping(device.next_message_id()));
+                    }
+                }
+            })
+            .expect("housekeeping needs a thread");
+    }
+
+    fn spawn_reader(self: &Arc<Self>, mut reader: LineReader) {
+        let device = self.clone();
+        std::thread::Builder::new()
+            .name("device-link".into())
+            .spawn(move || {
+                while device.running.load(Ordering::Relaxed) {
+                    let lines = match reader.read_lines() {
+                        Ok(lines) if lines.is_empty() => break,
+                        Ok(lines) => lines,
+                        Err(problem) => {
+                            log::warn!("device link read failed: {problem}");
+                            break;
+                        }
+                    };
+                    for line in lines {
+                        device.receive(&line);
+                    }
+                }
+                log::warn!("the device link closed");
+                device.inner.lock().unwrap().connected = false;
+            })
+            .expect("the device link needs a thread");
+    }
+
+    // ------------------------------------------------------- receiving ---
+
+    fn receive(&self, line: &str) {
+        let max_line = self.inner.lock().unwrap().max_line;
+        let body = match check(line, max_line) {
+            Ok(body) => body,
+            Err(problem) => {
+                // Never acted on, not even partially.
+                self.note_error(&format!("{problem}"));
+                self.log_wire(WireDirection::In, line, WireLevel::Error);
+                return;
+            }
+        };
+        let message: FromDevice = match serde_json::from_str(body) {
+            Ok(message) => message,
+            Err(problem) => {
+                self.note_error(&format!("unreadable line: {problem}"));
+                self.log_wire(WireDirection::In, body, WireLevel::Error);
+                return;
+            }
+        };
+
+        let level = match &message {
+            FromDevice::Error(_) => WireLevel::Error,
+            _ => WireLevel::Info,
+        };
+        self.log_wire(WireDirection::In, body, level);
+
+        match message {
+            FromDevice::HelloAck(ack) => {
+                {
+                    let mut inner = self.inner.lock().unwrap();
+                    // A greeting nobody asked for is a board that came back:
+                    // its counters restarted, and the published accumulator
+                    // must not.
+                    if inner.connected {
+                        inner.continuity.device_restarted();
+                    }
+                    inner.connected = true;
+                    inner.connection_count += 1;
+                    inner.board = ack.board;
+                    inner.firmware = ack.firmware;
+                    inner.protocol_version = ack.protocol_version;
+                    inner.max_line = ack.max_line;
+                    inner.capacities = Capacities {
+                        n_axes: ack.n_axes,
+                        max_zones: ack.max_zones,
+                        max_lines: ack.max_lines,
+                        scan_hz: ack.scan_hz,
+                    };
+                    inner.flashed = ack
+                        .flashed
+                        .map(|set| FlashedZoneSet { name: set.name, version: set.version });
+                }
+                // Everything the board needs to be useful, in the order it
+                // needs it: the wiring first, because a zone names a line by
+                // index and an unwired board would fire into nothing, then the
+                // stream. Zones follow only when somebody arms.
+                self.send(commands::lines(self.next_message_id(), &self.lines));
+                self.send(commands::stream(
+                    self.next_message_id(),
+                    self.stream_rate_hz,
+                    true,
+                ));
+            }
+            FromDevice::Sample(sample) => self.absorb_sample(&sample),
+            FromDevice::ZoneHit(hit) => {
+                let event = {
+                    let mut inner = self.inner.lock().unwrap();
+                    let counts_per_cm = inner.axes.first().map(|a| a.counts_per_cm).unwrap_or(1.0);
+                    let name = inner
+                        .armed
+                        .as_ref()
+                        .and_then(|armed| armed.set.zones.get(hit.zone))
+                        .map(|zone| zone.name.clone());
+                    if let Some(armed) = inner.armed.as_mut() {
+                        if let Some(slot) = armed.fired_at.get_mut(hit.zone) {
+                            *slot = hit.c.first().copied();
+                        }
+                    }
+                    let host_ns = inner.clock.observe(hit.t_us, monotonic_ns());
+                    name.map(|zone| ZoneHitEvent {
+                        zone,
+                        arm_id: hit.arm_id,
+                        seq: hit.seq,
+                        host_monotonic_ns: host_ns,
+                        position_cm: hit.c.first().copied().unwrap_or(0) as f64 / counts_per_cm,
+                    })
+                };
+                if let Some(event) = event {
+                    let _ = self.frames.send(StreamFrame::ZoneHit(event));
+                }
+            }
+            FromDevice::Armed(armed) => {
+                let mismatch = {
+                    let mut inner = self.inner.lock().unwrap();
+                    match inner.armed.as_mut() {
+                        Some(set) if set.arm_id == armed.arm_id => {
+                            // The board says which version it armed. If that is
+                            // not the one just uploaded, the board is running a
+                            // set nobody on this host has seen — worth a word,
+                            // because every zone in it is a line that fires
+                            // somewhere unexpected.
+                            let expected = set.set.version;
+                            set.confirmed = true;
+                            (expected != armed.zone_set_version)
+                                .then_some((expected, armed.zone_set_version))
+                        }
+                        _ => None,
+                    }
+                };
+                if let Some((expected, armed_version)) = mismatch {
+                    self.note_error(&format!(
+                        "the board armed zone-set version {armed_version}, not the {expected} just uploaded"
+                    ));
+                }
+                self.armed_ack.notify_all();
+            }
+            FromDevice::StateReport(report) => {
+                let mut inner = self.inner.lock().unwrap();
+                inner.ring_drops = report.ring_drops;
+                // The board's origin is the one the zones are evaluated
+                // against, so where the host's mirror has drifted — a `zero`
+                // that crossed a reset, a sample lost at the wrong moment — the
+                // board wins.
+                // The board's raw counts, against what the host is publishing.
+                // They differ by the continuity offset, so a *change* in the
+                // difference is the interesting thing — it means the host and
+                // the board disagree about how far the wheel has gone, which no
+                // other number would show.
+                for (index, counts) in report.c.iter().enumerate() {
+                    if let Some(axis) = inner.axes.get(index) {
+                        log::trace!(
+                            "{}: board {counts} counts, published {}",
+                            axis.name,
+                            axis.counts
+                        );
+                    }
+                }
+                for (index, origin) in report.origin.iter().enumerate() {
+                    if let Some(axis) = inner.axes.get_mut(index) {
+                        if axis.origin != *origin {
+                            log::debug!(
+                                "{}: adopting the board's origin {origin} (mirror had {})",
+                                axis.name,
+                                axis.origin
+                            );
+                            axis.origin = *origin;
+                        }
+                    }
+                }
+                if report.scan_overruns > 0 {
+                    drop(inner);
+                    // A scan was late. The device's timing is what this whole
+                    // system is for, so this is a finding and not a statistic.
+                    self.note_error(&format!("the board missed {} scans", report.scan_overruns));
+                }
+            }
+            FromDevice::Error(error) => {
+                // The refusal names the line it refused where it could read one,
+                // which is the difference between "the board is unhappy" and
+                // "the board refused the third zone of the set you just sent".
+                match error.answers {
+                    Some(message_id) => self.note_error(&format!(
+                        "{}: {} (refusing message {message_id})",
+                        error.code, error.detail
+                    )),
+                    None => self.note_error(&format!("{}: {}", error.code, error.detail)),
+                }
+            }
+            FromDevice::Log(line) => log::info!("board: {}", line.text),
+            FromDevice::Ok(ack) => log::trace!("board acknowledged {}", ack.answers),
+            FromDevice::Pong(ack) => log::trace!("board answered ping {}", ack.answers),
+        }
+    }
+
+    /// One sample: loss, the clock, continuity, the mirrors, the broadcast.
+    fn absorb_sample(&self, sample: &WireSample) {
+        let host_now = monotonic_ns();
+        let frame = {
+            let mut inner = self.inner.lock().unwrap();
+
+            // `seq` is contiguous on this wire, so a jump is loss — unlike the
+            // daemon's own stream, where decimation skips it by design.
+            let mut lost_before = 0;
+            if inner.seq != 0 && sample.seq > inner.seq + 1 {
+                lost_before = sample.seq - inner.seq - 1;
+                inner.seq_gaps += lost_before;
+            }
+            inner.seq = sample.seq;
+
+            // A device clock that went backwards is a board that restarted
+            // without saying hello.
+            if sample.t_us < inner.last_device_us {
+                inner.continuity.device_restarted();
+            }
+            inner.last_device_us = sample.t_us;
+            let host_monotonic_ns = inner.clock.observe(sample.t_us, host_now);
+
+            if let Some(previous) = inner.last_sample_at {
+                let interval = previous.elapsed().as_secs_f64();
+                if interval > 0.0 {
+                    inner.measured_rate_hz = 0.98 * inner.measured_rate_hz + 0.02 / interval;
+                }
+            }
+            inner.last_sample_at = Some(Instant::now());
+
+            let published = inner.continuity.publish(&sample.c);
+            for (index, counts) in published.iter().enumerate() {
+                let Some(axis) = inner.axes.get_mut(index) else { continue };
+                // Inversion is applied once, here, so nothing above carries a sign.
+                let counts = if axis.invert { -counts } else { *counts };
+                axis.distance += (counts - axis.counts).abs();
+                axis.counts = counts;
+                if let Some(velocity) = sample.v.as_ref().and_then(|v| v.get(index)) {
+                    let velocity = if axis.invert { -velocity } else { *velocity };
+                    axis.device_velocity_cm_s = velocity as f64 / axis.counts_per_cm;
+                }
+            }
+
+            let leading = inner.axes.first().map(|axis| axis.counts).unwrap_or(0);
+            inner.history.push_back((host_monotonic_ns, leading));
+            while inner
+                .history
+                .front()
+                .is_some_and(|(at, _)| host_monotonic_ns.saturating_sub(*at) > VELOCITY_SPAN_NS)
+            {
+                inner.history.pop_front();
+            }
+            if let Some((first_at, first_counts)) = inner.history.front().copied() {
+                let span = host_monotonic_ns.saturating_sub(first_at) as f64 / 1e9;
+                if span > 0.0 {
+                    if let Some(axis) = inner.axes.first_mut() {
+                        axis.host_velocity_cm_s =
+                            (leading - first_counts) as f64 / axis.counts_per_cm / span;
+                    }
+                }
+            }
+
+            Sample {
+                seq: sample.seq,
+                device_us: sample.t_us,
+                host_monotonic_ns,
+                lost_before,
+                axes: inner.axes.iter().map(axis_state).collect(),
+            }
+        };
+        let _ = self.frames.send(StreamFrame::Sample(frame));
+    }
+
+    fn note_error(&self, problem: &str) {
+        self.inner.lock().unwrap().last_error = Some(problem.to_string());
+        log::warn!("device: {problem}");
+    }
+
+    // --------------------------------------------------------- sending ---
+
+    fn next_message_id(&self) -> u16 {
+        let mut inner = self.inner.lock().unwrap();
+        inner.message_id = inner.message_id.wrapping_add(1);
+        inner.message_id
+    }
+
+    fn send(&self, command: Command) {
+        let line = command.encode();
+        self.log_wire(WireDirection::Out, line.trim_end(), WireLevel::Info);
+        let mut writer = self.writer.lock().unwrap();
+        if let Some(writer) = writer.as_mut() {
+            if let Err(problem) = writer.write_line(&line) {
+                log::warn!("device: could not write {}: {problem}", command.msg_type);
+            }
+        }
+    }
+
+    // ---------------------------------------------------- the API's view ---
+
     pub fn connected(&self) -> bool {
-        matches!(self.backend, Backend::Simulated) && self.running.load(Ordering::Relaxed)
+        self.inner.lock().unwrap().connected
     }
 
     pub fn subscribe_frames(&self) -> broadcast::Receiver<StreamFrame> {
@@ -179,47 +608,63 @@ impl Device {
     }
 
     pub fn capacities(&self) -> Capacities {
-        self.capacities.clone()
+        self.inner.lock().unwrap().capacities.clone()
     }
 
-    /// Note a line of the wire, for the monitor panel. Both directions, and
-    /// uninterpreted: this is the log for the moment the layers stop agreeing.
     pub fn log_wire(&self, direction: WireDirection, text: impl Into<String>, level: WireLevel) {
+        let text = text.into();
+        let is_sample = text.contains(r#""msg_type":"sample""#);
         let line = WireLine {
             host_monotonic_ns: monotonic_ns(),
             direction,
-            text: text.into(),
+            text,
             level,
         };
         {
-            let mut log = self.wire_log.lock().unwrap();
+            let (mut log, limit) = if is_sample {
+                (self.samples.lock().unwrap(), SAMPLE_LINES)
+            } else {
+                (self.conversation.lock().unwrap(), CONVERSATION_LINES)
+            };
             log.push_back(line.clone());
-            while log.len() > WIRE_LOG_LINES {
+            while log.len() > limit {
                 log.pop_front();
             }
         }
         let _ = self.wire.send(line);
     }
 
-    pub fn wire_log(&self, most: usize) -> Vec<WireLine> {
-        let log = self.wire_log.lock().unwrap();
-        log.iter().rev().take(most).rev().cloned().collect()
+    /// The wire's recent past, in time order: **all** of the conversation, and
+    /// the last `most_samples` samples merged back into it.
+    ///
+    /// The asymmetry is the point. Truncating the merged list to a total would
+    /// hand back a second of samples and none of the conversation, which is the
+    /// opposite of what somebody opening the monitor came for.
+    pub fn wire_log(&self, most_samples: usize) -> Vec<WireLine> {
+        let samples = self.samples.lock().unwrap();
+        let recent = samples.iter().skip(samples.len().saturating_sub(most_samples));
+        let mut lines: Vec<WireLine> = self
+            .conversation
+            .lock()
+            .unwrap()
+            .iter()
+            .cloned()
+            .chain(recent.cloned())
+            .collect();
+        lines.sort_by_key(|line| line.host_monotonic_ns);
+        lines
     }
 
     pub fn info(&self, port: String) -> DeviceInfo {
         let inner = self.inner.lock().unwrap();
-        let simulated = matches!(self.backend, Backend::Simulated);
         DeviceInfo {
-            connected: self.connected(),
+            connected: inner.connected,
             port,
-            board: if simulated { "simulated".into() } else { "none".into() },
-            firmware_version: if simulated { "0.0.0+simulated".into() } else { String::new() },
-            protocol_version: 1,
-            uptime_device_us: inner
-                .last_sample_at
-                .map(|_| (inner.seq as f64 / SCAN_HZ * 1e6) as u64)
-                .unwrap_or(0),
-            capacities: self.capacities.clone(),
+            board: if inner.board.is_empty() { "none".into() } else { inner.board.clone() },
+            firmware_version: inner.firmware.clone(),
+            protocol_version: inner.protocol_version,
+            uptime_device_us: inner.last_device_us,
+            capacities: inner.capacities.clone(),
             flashed_zone_set: inner.flashed.clone(),
             link: LinkStats {
                 connection_count: inner.connection_count,
@@ -242,293 +687,180 @@ impl Device {
                 measured_rate_hz: inner.measured_rate_hz,
                 stale,
             },
-            link: LinkState {
-                connected: self.connected(),
-            },
+            link: LinkState { connected: inner.connected },
         }
     }
 
-    /// Move the API origin. Never the accumulator: see `ZeroRequest`.
+    /// Move the origin — on the board, and on the host's mirror of it.
     pub fn zero(&self, axes: &[String]) {
-        let mut inner = self.inner.lock().unwrap();
-        for axis in inner.axes.iter_mut() {
-            if axes.is_empty() || axes.iter().any(|name| name == &axis.name) {
-                axis.origin_counts = axis.counts;
-                axis.distance_counts = 0.0;
+        let indices: Vec<usize> = {
+            let mut inner = self.inner.lock().unwrap();
+            let mut indices = Vec::new();
+            for index in 0..inner.axes.len() {
+                let selected =
+                    axes.is_empty() || axes.iter().any(|name| name == &inner.axes[index].name);
+                if selected {
+                    inner.axes[index].origin = inner.axes[index].counts;
+                    inner.axes[index].distance = 0;
+                    indices.push(index);
+                }
             }
-        }
-        drop(inner);
-        self.log_wire(WireDirection::Out, r#"{"zero":{}}"#, WireLevel::Info);
+            indices
+        };
+        self.send(commands::zero(self.next_message_id(), &indices));
     }
 
-    pub fn arm(&self, set: CompiledZoneSet, origin: ArmOrigin, label: Option<String>) -> u32 {
-        let arm_id = rand::random::<u16>() as u32 + 1000;
-        self.log_wire(
-            WireDirection::Out,
-            format!(r#"{{"zones_begin":{{"zone_set_version":{},"n":{}}}}}"#, set.version, set.zones.len()),
-            WireLevel::Info,
-        );
-        self.log_wire(
-            WireDirection::Out,
-            format!(r#"{{"arm":{{"arm_id":{arm_id},"origin":"{}"}}}}"#, match origin {
-                ArmOrigin::Current => "current",
-                ArmOrigin::Absolute => "absolute",
-            }),
-            WireLevel::Info,
-        );
+    /// Upload a compiled set, arm it, and wait for the board to say so.
+    ///
+    /// `None` if the board did not acknowledge. Reporting an arm that never
+    /// happened is worse than refusing: a trial would run believing a line is
+    /// armed that is not.
+    pub fn arm(
+        &self,
+        set: CompiledZoneSet,
+        origin: ArmOrigin,
+        label: Option<String>,
+    ) -> Option<u32> {
+        let arm_id = u32::from(rand::random::<u16>()) + 1000;
+        let version = set.version;
+        let zone_count = set.zones.len();
+
+        // Chunked, and the board's live set is untouched until `zones_end`.
+        self.send(commands::zones_begin(
+            self.next_message_id(),
+            version,
+            zone_count,
+            &set.name,
+        ));
+        for (index, zone) in set.zones.iter().enumerate() {
+            self.send(commands::zone(self.next_message_id(), &wire_zone(index, zone)));
+        }
+        self.send(commands::zones_end(self.next_message_id(), 0));
+
         {
             let mut inner = self.inner.lock().unwrap();
             if origin == ArmOrigin::Current {
                 for axis in inner.axes.iter_mut() {
-                    axis.origin_counts = axis.counts;
-                    axis.distance_counts = 0.0;
+                    axis.origin = axis.counts;
+                    axis.distance = 0;
                 }
             }
             inner.armed = Some(ArmedSet {
-                zones: set
-                    .zones
-                    .iter()
-                    .cloned()
-                    .map(|zone| ZoneRuntime {
-                        zone,
-                        inside: false,
-                        fired: false,
-                        armed: true,
-                        fired_at_counts: None,
-                    })
-                    .collect(),
+                fired_at: vec![None; zone_count],
                 set,
                 arm_id,
                 label,
+                confirmed: false,
             });
         }
-        self.log_wire(
-            WireDirection::In,
-            format!(r#"{{"armed":{{"arm_id":{arm_id}}}}}"#),
-            WireLevel::Info,
-        );
-        arm_id
+        self.send(commands::arm(
+            self.next_message_id(),
+            arm_id,
+            version,
+            origin == ArmOrigin::Current,
+        ));
+
+        let inner = self.inner.lock().unwrap();
+        let (mut inner, timeout) = self
+            .armed_ack
+            .wait_timeout_while(inner, ARM_ACK_TIMEOUT, |inner| {
+                !inner.armed.as_ref().is_some_and(|armed| armed.confirmed)
+            })
+            .expect("the device lock");
+        if timeout.timed_out() {
+            inner.armed = None;
+            return None;
+        }
+        Some(arm_id)
     }
 
     pub fn disarm(&self) {
-        self.inner.lock().unwrap().armed = None;
-        self.log_wire(WireDirection::Out, r#"{"disarm":{}}"#, WireLevel::Info);
+        let arm_id = {
+            let mut inner = self.inner.lock().unwrap();
+            let arm_id = inner.armed.as_ref().map(|armed| armed.arm_id).unwrap_or(0);
+            inner.armed = None;
+            arm_id
+        };
+        self.send(commands::disarm(self.next_message_id(), arm_id));
     }
 
-    /// Write the armed set to the board's flash. The store on the host stays
-    /// the source; a flashed set is a copy the board reports by name.
+    /// Ask the board to keep the armed set across a power cycle.
     pub fn save_to_flash(&self) -> Option<FlashedZoneSet> {
-        let mut inner = self.inner.lock().unwrap();
-        let armed = inner.armed.as_ref()?;
-        let flashed = FlashedZoneSet {
-            name: armed.set.name.clone(),
-            version: armed.set.version,
+        let flashed = {
+            let inner = self.inner.lock().unwrap();
+            let armed = inner.armed.as_ref()?;
+            FlashedZoneSet { name: armed.set.name.clone(), version: armed.set.version }
         };
-        inner.flashed = Some(flashed.clone());
-        drop(inner);
-        self.log_wire(WireDirection::Out, r#"{"save":{}}"#, WireLevel::Info);
+        self.send(commands::save(self.next_message_id()));
+        // Noted here, and settled by the board's next `hello_ack`: what is on
+        // the flash is the board's to report, not the host's to assume.
+        self.inner.lock().unwrap().flashed = Some(flashed.clone());
         Some(flashed)
     }
 
     pub fn armed_zones(&self) -> (Option<ArmSummary>, Vec<ZoneStatus>) {
         let inner = self.inner.lock().unwrap();
-        match &inner.armed {
-            None => (None, Vec::new()),
-            Some(armed) => {
-                let counts_per_cm = inner.axes.first().map(|a| a.counts_per_cm).unwrap_or(1.0);
-                (
-                    Some(ArmSummary {
-                        zone_set: armed.set.name.clone(),
-                        version: armed.set.version,
-                        arm_id: armed.arm_id,
-                        label: armed.label.clone(),
-                    }),
-                    armed
-                        .zones
+        let Some(armed) = inner.armed.as_ref() else {
+            return (None, Vec::new());
+        };
+        let counts_per_cm = inner.axes.first().map(|a| a.counts_per_cm).unwrap_or(1.0);
+        let zones = armed
+            .set
+            .zones
+            .iter()
+            .enumerate()
+            .map(|(index, zone)| {
+                let fired_at = armed.fired_at.get(index).copied().flatten();
+                ZoneStatus {
+                    name: zone.name.clone(),
+                    // The board disarms a `once` zone when it fires; the host
+                    // mirrors that from the hit rather than asking.
+                    armed: !(fired_at.is_some() && zone.fire == FireRule::Once),
+                    fired: fired_at.is_some(),
+                    inside: false,
+                    fired_at_cm: fired_at.map(|counts| counts as f64 / counts_per_cm),
+                    // The bounds as armed: what the board is comparing against,
+                    // in centimetres again.
+                    min_cm: zone
+                        .min_counts
                         .iter()
-                        .map(|zone| ZoneStatus {
-                            name: zone.zone.name.clone(),
-                            armed: zone.armed,
-                            fired: zone.fired,
-                            inside: zone.inside,
-                            fired_at_cm: zone
-                                .fired_at_counts
-                                .map(|counts| counts as f64 / counts_per_cm),
-                            // Back to centimetres from the counts the board is
-                            // comparing against — the bounds as armed, not as
-                            // authored.
-                            min_cm: zone
-                                .zone
-                                .min_counts
-                                .iter()
-                                .map(|bound| bound.map(|counts| counts as f64 / counts_per_cm))
-                                .collect(),
-                            max_cm: zone
-                                .zone
-                                .max_counts
-                                .iter()
-                                .map(|bound| bound.map(|counts| counts as f64 / counts_per_cm))
-                                .collect(),
-                            wrap_cm: zone
-                                .zone
-                                .wrap_counts
-                                .map(|counts| counts as f64 / counts_per_cm),
-                            metric: zone.zone.metric,
-                        })
+                        .map(|bound| bound.map(|counts| counts as f64 / counts_per_cm))
                         .collect(),
-                )
-            }
-        }
+                    max_cm: zone
+                        .max_counts
+                        .iter()
+                        .map(|bound| bound.map(|counts| counts as f64 / counts_per_cm))
+                        .collect(),
+                    wrap_cm: zone.wrap_counts.map(|counts| counts as f64 / counts_per_cm),
+                    metric: zone.metric,
+                }
+            })
+            .collect();
+        (
+            Some(ArmSummary {
+                zone_set: armed.set.name.clone(),
+                version: armed.set.version,
+                arm_id: armed.arm_id,
+                label: armed.label.clone(),
+            }),
+            zones,
+        )
     }
 
-    /// The counter right now, for the calibration measurement.
     pub fn counts_of(&self, axis_name: &str) -> Option<i64> {
         let inner = self.inner.lock().unwrap();
         inner
             .axes
             .iter()
             .find(|axis| axis.name == axis_name)
-            .map(|axis| axis.counts as i64)
+            .map(|axis| axis.counts)
     }
 
-    /// Apply a new calibration to the running axes, so what the API reports in
-    /// centimetres changes the moment the number behind it does.
     pub fn recalibrate(&self, axis_name: &str, counts_per_cm: f64) {
         let mut inner = self.inner.lock().unwrap();
         if let Some(axis) = inner.axes.iter_mut().find(|axis| axis.name == axis_name) {
             axis.counts_per_cm = counts_per_cm;
         }
-    }
-
-    // ------------------------------------------------------- simulation ---
-
-    fn spawn_simulation(self: Arc<Self>) {
-        self.running.store(true, Ordering::Relaxed);
-        {
-            let mut inner = self.inner.lock().unwrap();
-            inner.connection_count += 1;
-        }
-        self.log_wire(
-            WireDirection::Out,
-            r#"{"hello":{"protocol_version":1}}"#,
-            WireLevel::Info,
-        );
-        self.log_wire(
-            WireDirection::In,
-            r#"{"hello_ack":{"board":"simulated","firmware":"0.0.0+simulated","n_axes":2,"max_zones":16}}"#,
-            WireLevel::Info,
-        );
-
-        std::thread::Builder::new()
-            .name("simulated-wheel".into())
-            .spawn(move || {
-                let period = Duration::from_secs_f64(1.0 / SCAN_HZ);
-                let mut next = Instant::now();
-                while self.running.load(Ordering::Relaxed) {
-                    next += period;
-                    let now = Instant::now();
-                    if next > now {
-                        std::thread::sleep(next - now);
-                    } else {
-                        next = now;
-                    }
-                    self.tick();
-                }
-            })
-            .expect("the simulated wheel needs a thread");
-    }
-
-    fn tick(&self) {
-        let now = Instant::now();
-        let (sample, hits) = {
-            let mut inner = self.inner.lock().unwrap();
-
-            if now >= inner.bout_ends_at {
-                inner.resting = !inner.resting;
-                let seconds = if inner.resting { 2.0 } else { 6.0 };
-                inner.bout_ends_at = now + Duration::from_secs_f64(seconds);
-                inner.target_speed_cm_s = if inner.resting {
-                    0.0
-                } else {
-                    12.0 + f64::from(rand::random::<u8>()) / 255.0 * 26.0
-                };
-            }
-
-            let phase = inner.seq as f64 / SCAN_HZ;
-            let wobble = 1.0 + 0.12 * (phase * 5.3).sin();
-            let speed_cm_s = (inner.target_speed_cm_s * wobble).max(0.0);
-
-            for axis in inner.axes.iter_mut() {
-                let direction = if axis.invert { -1.0 } else { 1.0 };
-                let step = direction * speed_cm_s * axis.counts_per_cm / SCAN_HZ;
-                axis.counts += step;
-                axis.distance_counts += step.abs();
-                // The device's velocity is whole counts over its own window:
-                // the same motion through a coarser sieve than the host's.
-                let window_counts = (step * SCAN_HZ / 20.0).round();
-                axis.device_velocity_cm_s = window_counts * 20.0 / axis.counts_per_cm;
-            }
-
-            let leading = inner.axes[0].counts;
-            inner.history.push_back((now, leading));
-            while inner
-                .history
-                .front()
-                .is_some_and(|(at, _)| now.duration_since(*at) > Duration::from_millis(500))
-            {
-                inner.history.pop_front();
-            }
-            if let (Some((first_at, first_counts)), Some(axis)) =
-                (inner.history.front().copied(), inner.axes.first())
-            {
-                let span = now.duration_since(first_at).as_secs_f64();
-                if span > 0.0 {
-                    let velocity = (leading - first_counts) / axis.counts_per_cm / span;
-                    inner.axes[0].host_velocity_cm_s = velocity;
-                }
-            }
-
-            inner.seq += 1;
-            let mut lost_before = 0;
-            if now >= inner.next_loss_at {
-                // Lines the daemon never received. A consumer cannot read this
-                // off `seq` — a decimated stream skips it by design — so the
-                // sample carries the count.
-                lost_before = 3;
-                inner.seq += lost_before;
-                inner.seq_gaps += 1;
-                inner.next_loss_at = now + Duration::from_secs(7);
-            }
-            if let Some(previous) = inner.last_sample_at {
-                let interval = now.duration_since(previous).as_secs_f64();
-                if interval > 0.0 {
-                    // A slow average, so the number is the link's rate and not
-                    // the jitter of the last two samples.
-                    inner.measured_rate_hz = 0.99 * inner.measured_rate_hz + 0.01 / interval;
-                }
-            }
-            inner.last_sample_at = Some(now);
-
-            let hits = evaluate_zones(&mut inner);
-            let sample = Sample {
-                seq: inner.seq,
-                device_us: (inner.seq as f64 / SCAN_HZ * 1e6) as u64,
-                host_monotonic_ns: monotonic_ns(),
-                lost_before,
-                axes: inner.axes.iter().map(axis_state).collect(),
-            };
-            (sample, hits)
-        };
-
-        for hit in hits {
-            self.log_wire(
-                WireDirection::In,
-                format!(r#"{{"zone_hit":{{"zone":"{}","seq":{}}}}}"#, hit.zone, hit.seq),
-                WireLevel::Info,
-            );
-            let _ = self.frames.send(StreamFrame::ZoneHit(hit));
-        }
-        let _ = self.frames.send(StreamFrame::Sample(sample));
     }
 }
 
@@ -538,96 +870,47 @@ impl Drop for Device {
     }
 }
 
-/// Zone evaluation, in counts, on the scan that saw the movement — the shape
-/// the firmware's own loop will have.
-///
-/// A zone fires on the **entry edge**: arming a zone the animal is already
-/// inside does not fire it unless the zone says `level`. `once` disarms after
-/// firing; `rearm` comes back once the position has left by the hysteresis.
-fn evaluate_zones(inner: &mut Inner) -> Vec<ZoneHitEvent> {
-    let Some(armed) = inner.armed.as_mut() else {
-        return Vec::new();
-    };
-    let arm_id = armed.arm_id;
-    let mut hits = Vec::new();
-    for runtime in armed.zones.iter_mut() {
-        let axis_index = runtime.zone.axis_indices[0];
-        let axis = &inner.axes[axis_index];
-        let raw = match runtime.zone.metric {
-            ZoneMetric::Displacement => axis.counts - axis.origin_counts,
-            ZoneMetric::Distance => axis.distance_counts,
-        };
-        let value = match runtime.zone.wrap_counts {
-            Some(period) if period > 0 => raw.rem_euclid(period as f64),
-            _ => raw,
-        };
-        let counts = value as i64;
-
-        let low = runtime.zone.min_counts[0];
-        let high = runtime.zone.max_counts[0];
-        let inside = low.is_none_or(|low| counts >= low) && high.is_none_or(|high| counts <= high);
-
-        if inside && !runtime.inside && runtime.armed {
-            runtime.fired = true;
-            runtime.fired_at_counts = Some(counts);
-            if runtime.zone.fire == FireRule::Once {
-                runtime.armed = false;
-            }
-            hits.push(ZoneHitEvent {
-                zone: runtime.zone.name.clone(),
-                arm_id,
-                seq: inner.seq,
-                host_monotonic_ns: monotonic_ns(),
-                position_cm: counts as f64 / axis.counts_per_cm,
-            });
-        }
-
-        if !inside && runtime.zone.fire == FireRule::Rearm {
-            // Only past the hysteresis: a boundary the animal is standing on
-            // must not be a pulse train.
-            let left_by = low
-                .map(|low| (low - counts).max(0))
-                .unwrap_or(0)
-                .max(high.map(|high| (counts - high).max(0)).unwrap_or(0));
-            if left_by >= runtime.zone.hysteresis_counts {
-                runtime.armed = true;
-            }
-        }
-        runtime.inside = inside;
+/// A compiled zone, as the wire carries it: indices and counts, nothing else.
+fn wire_zone(index: usize, zone: &CompiledZone) -> WireZone {
+    WireZone {
+        i: index,
+        ax: zone.axis_indices.clone(),
+        m: match zone.metric {
+            ZoneMetric::Displacement => 0,
+            ZoneMetric::Distance => 1,
+        },
+        lo: zone.min_counts.clone(),
+        hi: zone.max_counts.clone(),
+        wrap: zone.wrap_counts.unwrap_or(0),
+        fire: match zone.fire {
+            FireRule::Once => 0,
+            FireRule::Rearm => 1,
+        },
+        hy: zone.hysteresis_counts,
+        lvl: zone.level,
+        line: zone.line_index,
+        act: 0,
+        ms: 10,
     }
-    hits
 }
 
 fn axis_state(axis: &AxisRuntime) -> AxisState {
     AxisState {
         name: axis.name.clone(),
-        counts: axis.counts as i64,
-        position_cm: (axis.counts - axis.origin_counts) / axis.counts_per_cm,
-        distance_cm: axis.distance_counts / axis.counts_per_cm,
+        counts: axis.counts,
+        position_cm: (axis.counts - axis.origin) as f64 / axis.counts_per_cm,
+        distance_cm: axis.distance as f64 / axis.counts_per_cm,
         velocity_cm_s: axis.host_velocity_cm_s,
         device_velocity_cm_s: axis.device_velocity_cm_s,
     }
 }
 
+/// `CLOCK_MONOTONIC` nanoseconds — the join key with statemachined's trace and
+/// vstimd's vblank timestamps.
 pub fn monotonic_ns() -> u64 {
-    let mut spec = libc_timespec();
-    // SAFETY: `spec` is a valid out-pointer for the duration of the call.
-    unsafe { clock_gettime(CLOCK_MONOTONIC, &mut spec) };
+    // SAFETY: a valid out-pointer for the duration of the call.
+    let mut spec = unsafe { std::mem::zeroed::<libc::timespec>() };
+    // SAFETY: as above.
+    unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut spec) };
     spec.tv_sec as u64 * 1_000_000_000 + spec.tv_nsec as u64
-}
-
-// The host's monotonic clock, which is the join key with statemachined's trace
-// and vstimd's vblank timestamps. Declared here rather than pulling in a crate
-// for two lines.
-#[repr(C)]
-struct Timespec {
-    tv_sec: i64,
-    tv_nsec: i64,
-}
-const CLOCK_MONOTONIC: i32 = 1;
-extern "C" {
-    fn clock_gettime(clock: i32, spec: *mut Timespec) -> i32;
-}
-fn libc_timespec() -> Timespec {
-    Timespec { tv_sec: 0, tv_nsec: 0 }
 }

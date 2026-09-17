@@ -24,14 +24,24 @@
 
 import { BasePanelElement, defineElementOnce } from "./base_panel_element.js";
 
-/// What the browser holds. The daemon's ring is larger; this is what a table
-/// can be scrolled through without the tab becoming the slow part of the rig.
-const MOST_LINES_ON_SCREEN = 2000;
+/// What the browser holds, split the way the daemon splits it. A single ring
+/// floods: at 500 Hz the samples evict the greeting and the arm within seconds,
+/// and those are the lines somebody opened this panel to read. The conversation
+/// is kept deep and the samples shallow, and the two are merged by time.
+const MOST_CONVERSATION_LINES = 1000;
+const MOST_SAMPLE_LINES = 300;
+
+/// A sample line, as it looks on the wire. The daemon splits its own rings on
+/// the same test.
+function isSample(line) {
+  return /"msg_type":"sample"/.test(line.text || "");
+}
 
 export class SerialMonitorPanelElement extends BasePanelElement {
   constructor() {
     super();
-    this.lines = [];
+    this.conversation = [];
+    this.samples = [];
     this.hiddenSamples = 0;
     this.showsSamples = false;
     this.isFollowing = true;
@@ -97,7 +107,8 @@ export class SerialMonitorPanelElement extends BasePanelElement {
           this.make("button", {
             text: "clear",
             onClick: () => {
-              this.lines = [];
+              this.conversation = [];
+              this.samples = [];
               this.hiddenSamples = 0;
               this.paint();
             },
@@ -112,8 +123,7 @@ export class SerialMonitorPanelElement extends BasePanelElement {
 
   start() {
     this.attempt(async () => {
-      const backfill = await this.api.readWireLog();
-      this.lines = backfill.lines || [];
+      for (const line of (await this.api.readWireLog()).lines || []) this.absorb(line, false);
       this.paint();
     });
     this.followStream(this.api.wireStreamUrl(), {
@@ -132,28 +142,24 @@ export class SerialMonitorPanelElement extends BasePanelElement {
     this.linkPill.textContent = live ? "following" : "not following";
   }
 
-  absorb(line) {
-    this.lines.push(line);
-    if (this.lines.length > MOST_LINES_ON_SCREEN) {
-      this.lines.splice(0, this.lines.length - MOST_LINES_ON_SCREEN);
-    }
-    this.paint();
+  absorb(line, repaint = true) {
+    const [held, limit] = isSample(line)
+      ? [this.samples, MOST_SAMPLE_LINES]
+      : [this.conversation, MOST_CONVERSATION_LINES];
+    held.push(line);
+    if (held.length > limit) held.splice(0, held.length - limit);
+    if (repaint) this.paint();
   }
 
   visibleLines() {
-    let hidden = 0;
-    const visible = [];
-    for (const line of this.lines) {
-      const isSample = /"sample"|^DATA:/.test(line.text || "");
-      if (isSample && !this.showsSamples) {
-        hidden += 1;
-        continue;
-      }
-      if (this.textFilter && !(line.text || "").toLowerCase().includes(this.textFilter)) continue;
-      visible.push(line);
-    }
-    this.hiddenSamples = hidden;
-    return visible;
+    this.hiddenSamples = this.showsSamples ? 0 : this.samples.length;
+    const lines = this.showsSamples
+      ? [...this.conversation, ...this.samples].sort(
+          (a, b) => a.host_monotonic_ns - b.host_monotonic_ns,
+        )
+      : this.conversation;
+    if (!this.textFilter) return lines;
+    return lines.filter((line) => (line.text || "").toLowerCase().includes(this.textFilter));
   }
 
   paint() {
@@ -172,7 +178,8 @@ export class SerialMonitorPanelElement extends BasePanelElement {
       ),
     );
     this.countLabel.textContent =
-      `${visible.length} lines` + (this.hiddenSamples > 0 ? `, ${this.hiddenSamples} samples hidden` : "");
+      `${visible.length} lines` +
+      (this.hiddenSamples > 0 ? `, ${this.hiddenSamples} samples hidden` : "");
     if (this.isFollowing) this.scroller.scrollTop = this.scroller.scrollHeight;
   }
 }

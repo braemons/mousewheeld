@@ -38,13 +38,14 @@ scan that sees the count, and put on a TTL line.
 | | |
 |---|---|
 | **The API**, and the types behind it | `daemon/src/model/`, `daemon/src/api/` — generated into `/api/openapi.json`, so a client is checked against the daemon and not a description of it |
+| **The wire** | [`docs/reference/protocol.md`](docs/reference/protocol.md), and `daemon/src/link/` — framing, CRC-16/CCITT-FALSE, the typed messages, the clock correlation and the continuity offset that keeps a published accumulator from stepping backwards across a board reset |
 | **The zone-set store and compiler** | centimetres in, integer counts out, against a named calibration |
 | **Calibration**, with its guided measurement | `daemon/src/api/calibration_routes.rs` |
 | **The console panels** | `web/elements/` — five custom elements, no build step, served by this daemon at its own version |
 | **Packaging** | `packaging/` — nfpm, a systemd unit, a udev rule, sysusers |
-| a wheel on a thread | `--simulate`, standing in for firmware that does not exist yet |
+| a board on a pty | `--simulate` — a simulator speaking the protocol on the far end of a real pty, so the daemon runs the link code it will run against a Teensy |
 
-**Not built:** the firmware, the serial link and the real-time thread, the
+**Not built:** the firmware, the real-time thread's scheduling discipline, the
 vinput producer, the ZMQ publisher, the recording, marks and paths, the Python
 client. Everything that needs a board is M1; everything else is reachable
 without one.
@@ -52,7 +53,7 @@ without one.
 ## Running it
 
 ```sh
-make dev          # a wheel on a thread; panels at http://127.0.0.1:8082/
+make dev          # a board simulator on a pty; panels at http://127.0.0.1:8082/
 make check        # build, clippy, tests
 make openapi      # dist/openapi.json, generated from the types
 make package      # deb and rpm

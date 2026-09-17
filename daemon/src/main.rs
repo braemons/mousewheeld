@@ -16,6 +16,7 @@
 mod api;
 mod daemon_state;
 mod device;
+mod link;
 mod model;
 mod zones;
 
@@ -140,8 +141,21 @@ fn serve(port: u16, bind: String, rig_config: PathBuf, storage_dir: PathBuf, sim
             invert: axis.invert,
         })
         .collect();
-    let backend = if simulate { Backend::Simulated } else { Backend::Absent };
-    let device = Device::new(backend, axes);
+    // A port in the rig config is a board; `--simulate` is a pty with one on
+    // the far end; neither is the same as "no device", which is what a
+    // development box without either honestly has.
+    let backend = match (simulate, config.device.port.as_str()) {
+        (true, _) => Backend::Simulated,
+        (false, "") => Backend::Absent,
+        (false, port) => Backend::Port { path: port.to_string(), baud: config.device.baud },
+    };
+    let stream_rate_hz = config.stream.rate_hz;
+    let lines = config
+        .lines
+        .iter()
+        .map(|line| (line.index, line.pin, line.safe_high))
+        .collect();
+    let device = Device::new(backend, axes, lines, stream_rate_hz);
 
     let daemon = Arc::new(Daemon {
         config_path: rig_config,

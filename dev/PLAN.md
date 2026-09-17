@@ -2,12 +2,15 @@
 
 > **Status:** built from the top down, which is not the order the milestones are
 > numbered in. **No firmware yet** — that is the only part that needs a board —
-> but the daemon's **public surface** is running: the API and the types behind
-> it, the zone-set store and compiler, the calibration and its measurement
-> procedure, the config, the five console panels, and the packaging. Behind the
-> seam where the serial link will go, `--simulate` runs a wheel on a thread.
-> Building it this way round has already changed the design twice: see
-> *lost_before* in *The API* and the armed bounds in *Trigger zones*.
+> but the daemon is running and it now talks over a **real serial link**: the
+> API and the types behind it, the zone-set store and compiler, the calibration
+> and its measurement procedure, the config, the five console panels, the
+> packaging, and the wire — framing, CRC, the parser, the clock correlation and
+> the continuity offset (`docs/reference/protocol.md`). `--simulate` puts a
+> board simulator on the far end of a **pty**, so the daemon runs the same link
+> code it will run against a Teensy. Building it this way round has changed the
+> design four times: *lost_before* in *The API*, the armed bounds in *Trigger
+> zones*, and `answers` and the set's `name` in the protocol.
 > `dev/throwaway/` holds the host producer that drives vstimd from the old
 > sketch today. The preliminary ESP32 sketch in `rotary-encoder/` (imported
 > with its history from `joschaschmiedt/mouse_wheel`) is kept for reference and
@@ -569,6 +572,7 @@ mousewheeld/
 ├── platformio.ini             teensy41 · esp32
 ├── CMakeLists.txt             host build of the firmware core, for the tests
 ├── firmware/                  see Firmware
+├── docs/reference/protocol.md the wire, specified — BUILT
 ├── proto/mousewheeld/v1/events.proto
 ├── daemon/                    the binary
 │   ├── Cargo.toml             depends on vinput (vstimd, pinned tag)
@@ -795,13 +799,25 @@ Two things the panels settled about the API rather than merely displayed:
 
 ### Developing without a board
 
-`mousewheeld serve --simulate` — `make dev` — runs a wheel on a thread behind
-the same seam the serial link will occupy, and serves the panels from the same
-binary a rig would. The simulation is not decoration: it evaluates zones **in
-counts, off the real compiler's output**, exactly as the firmware's scan will,
-which is what makes the compiler's arithmetic testable before a board exists. It
-also injects what a happy path never shows — lost samples — because a consumer
-that has never seen a gap has never been tested.
+`mousewheeld serve --simulate` — `make dev` — makes a **pty** and puts a board
+simulator on the far end of it. The daemon then opens the other end as though it
+were `/dev/mousewheel` and runs the link it will run against a Teensy: raw
+termios, partial reads, line splitting, CRCs, the greeting, the chunked zone
+upload, the `armed` it waits for.
+
+That last part is why it is a pty and not a mock object. A simulator the daemon
+*called* would leave the framing, the CRC, the partial read and the reader
+thread — every part of this link that can actually be wrong — exercised by
+nothing. On a pty they are all in the path, and both protocol mistakes found so
+far were found by running it.
+
+The simulator is faithful where the daemon can be wrong — the wire and the
+semantics — and nothing like the firmware anywhere else: it has a thread and
+`format!` where the real board has an interrupt, a ring and a fixed-format
+writer. It evaluates zones **in counts**, off the real compiler's output, which
+is what makes the compiler's arithmetic testable before a board exists, and it
+**drops lines**, because a consumer that has never seen a gap has never been
+tested.
 
 There was a Python mock here while the panels were being written, and it is
 gone: the daemon serves `/elements/` now, and two implementations of one API is
@@ -892,7 +908,7 @@ contract. Each is rewritten here to this project's shapes.
 |---|---|---|
 | **M0** | ⬜ | Firmware core: counter extension, origin/odometer, zones, rings, framing, JSON reader, fixed writers. Host tests green under gcc/clang and sanitizers |
 | **M1** | ⬜ | Teensy 4.1 HAL, then ESP32 HAL. Analog output, flash, debug mode. **Scan rate and link cost measured and asserted** |
-| **M2** | 🟨 | Daemon. **Built:** the control side — API and model types, zone-set store and compiler with per-trial patches, calibration and its measurement procedure, config and line map, generated OpenAPI, `/elements/` embedded, the device seam with `--simulate`. **Left:** the real-time thread (serial link, framing and CRC, sample parser, clock correlation, continuity), marks and the path ring, recording, and the Python client |
+| **M2** | 🟨 | Daemon. **Built:** the control side — API and model types, zone-set store and compiler with per-trial patches, calibration and its measurement procedure, config and line map, generated OpenAPI, `/elements/` embedded — and the link: `docs/reference/protocol.md`, framing and CRC, the typed messages, the serial port in raw mode, the reader thread, clock correlation, the continuity offset, and a board simulator on a pty. **Left:** the thread's *real-time* discipline (a dedicated thread at elevated priority, no allocation on the per-sample path), marks and the path ring, recording, and the Python client |
 | **M3** | ⬜ | vinput producer, through vstimd's `vinput` crate (which exists, with `LinearNav3D`, and is waiting for a writer). Encoder-to-photon latency measured |
 | **M4** | ⬜ | ZMQ PUB with `events.proto`; `mousewheeld relay` |
 | **M5** | ⬜ | Zones end to end: line map from the rig config, store, patches, compiler, arm, flash, TTL into statemachined and daqd |

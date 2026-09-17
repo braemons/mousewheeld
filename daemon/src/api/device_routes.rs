@@ -51,16 +51,18 @@ pub async fn read_firmware(State(daemon): State<Arc<Daemon>>) -> Json<FirmwareVe
     })
 }
 
-/// The wire's recent past.
+/// The wire's recent past: the whole conversation, and the last hundred
+/// samples.
 ///
 /// A monitor that started at "now" would miss every fault that had already
 /// happened, which is most of them — so the ring is handed over first and the
-/// stream follows it.
+/// stream follows it. Samples are capped rather than the conversation, because
+/// at 500 Hz they are the only thing that would come back.
 #[utoipa::path(get, path = "/api/device/monitor", tag = "device",
     responses((status = 200, body = WireLog)))]
 pub async fn read_wire_log(State(daemon): State<Arc<Daemon>>) -> Json<WireLog> {
     Json(WireLog {
-        lines: daemon.device.wire_log(400),
+        lines: daemon.device.wire_log(100),
     })
 }
 
