@@ -1,10 +1,16 @@
 # mousewheeld — the plan
 
-> **Status:** plan. Nothing here is built. The preliminary ESP32 sketch
-> in `rotary-encoder/` (imported with its history from `joschaschmiedt/mouse_wheel`)
-> is kept for reference and not built on: it is a hand-knob encoder
-> library with a 16-bit position, polled on any received byte, and none of it
-> survives the design below. Milestones and their state are at the end.
+> **Status:** a plan, with two pieces built out of order. No firmware and no
+> daemon yet; what exists is the **web client** (`web/elements/`, five console
+> panels) and the **mock daemon** they are driven against (`dev/mock/`), built
+> early because a UI is cheaper to get wrong on screen than in a design
+> document — and it did change the API: see *lost_before* in *The API*.
+> `dev/throwaway/` holds the host producer that drives vstimd from the old
+> sketch today. The preliminary ESP32 sketch in `rotary-encoder/` (imported
+> with its history from `joschaschmiedt/mouse_wheel`) is kept for reference and
+> not built on: it is a hand-knob encoder library with a 16-bit position,
+> polled on any received byte, and none of it survives the design below.
+> Milestones and their state are at the end.
 
 ## What mousewheeld is
 
@@ -144,6 +150,13 @@ too. So mousewheeld publishes **centimetres** into the shm segment and writes
 `scale = 1.0` into the axis descriptor; vstimd's rig config names the device and
 does not restate its calibration. That section of vstimd's document changes with
 M3.
+
+**Measure the surface the animal runs on, not the nominal diameter.** What a
+corridor position is made of is how far the feet travelled: inside the rim, on
+whatever tread is glued to it, a few millimetres off the drum. The arithmetic
+above is what a measurement is checked against — a whole-number ratio between
+the two is a decoder counting ×1 or ×2 where the counts-per-rev assumes ×4, and
+it looks exactly like a wheel of the wrong size.
 
 A **measurement procedure** replaces arithmetic nobody trusts:
 `calibration/measure/start {axis, known_distance_cm}` → the experimenter turns
@@ -562,11 +575,14 @@ mousewheeld/
 │       ├── api/               one *_routes.rs per group in *The API*, openapi.rs
 │       ├── relay/             ZMQ SUB → local vinput shm
 │       └── mdns_service_advertisement.rs
-├── web/elements/              mousewheeld.js and its panels (embedded)
+├── web/elements/              mousewheeld.js and its panels (embedded) — BUILT
 ├── client/python/             mousewheeld-client
 ├── tests/core/                firmware core, mirrors firmware/core
 ├── packaging/                 nfpm · systemd · udev · sysusers · setcap
-└── dev/PLAN.md                this file
+└── dev/
+    ├── PLAN.md                this file
+    ├── mock/                  a stand-in daemon for the elements — BUILT, and deleted at M2
+    └── throwaway/             the ESP32 sketch into vstimd's shm — BUILT, and deleted at M2
 ```
 
 File names are long on purpose, as in statemachined: `zone_set_compiler.rs`, not
@@ -594,11 +610,35 @@ really one: the layout is a contract between a writer and a reader, and the
 reader's own definition of it is the only copy that cannot drift. `vtl` is
 consumed the same way by `gpiochip-daqd`.
 
-**Status on vstimd's side: none of it exists.** No `vinput` crate, and
-`ExternalPosition2D` never reads shm. mousewheeld is its first producer, so M3 is
-built together with vstimd's `vinput`, `LinearNav3D` and the `[[input.device]]`
-rig-config section, and the calibration change in *Calibration* lands in
-`INPUT_LATENCY.md` §6 at the same time.
+**Status on vstimd's side: the consumer half is built and waiting for a
+producer.** An earlier revision of this paragraph said none of it existed; that
+is no longer true. On vstimd's `0.3`: the `vinput` crate (seqlock, `f64` values,
+heartbeat, `VinputOwner`/`VinputClient`), `InputRegistry` sampling every device
+once per frame under the scene write lock, the staleness policy per semantic,
+the reconnect thread, the `[[input.device]]` rig-config section, `LinearNav3D
+{ source }`, `DeviceDrivenTransform`, `ExternalPosition2D` reading shm for real,
+`ListInputDevices` in the protocol, the overlay's device readout, and
+`--input-override name=keyboard|gamepad:N` for a desk with no rig. Its own tests
+cover the layout across processes and the animations against real segments.
+
+What is left for M3 is therefore **the producer and the measurement**, not the
+contract: write `/vstimd_wheel` from the real-time thread through `VinputOwner`,
+and measure encoder-to-photon. The calibration change in *Calibration* still
+lands in `INPUT_LATENCY.md` §6 at the same time — vstimd's rig-config `scale`
+exists and today's example still spells a counts-to-cm factor into it.
+
+Nothing in vstimd has ever been driven by a real producer. Before M0 is worth
+starting, a **throwaway host producer** — the existing ESP32 sketch over serial
+into `vstimd.shm.InputDevice` — exercises that whole chain on hardware and
+yields M3's latency number years early. It is
+`dev/throwaway/wheel_to_vinput.py`, it polls and unwraps a 16-bit counter
+because that sketch gives it no choice, and it is written to be deleted at M2.
+It honours the two things that are contract rather than prototype: it publishes
+centimetres, and its axis is a running total that is never reset. Its
+`--measure <cm>` is this section's procedure with the person at the terminal
+standing in for the API — it counts between two presses of Enter, prints the
+`counts_per_cm` that follows and the circumference it implies, and persists
+nothing, because a prototype has no store to apply a calibration to.
 
 Write order per sample: **shm first**, then everything else. The camera is the
 only consumer that cannot wait for a publish, a ring insert or a file write.
@@ -656,7 +696,7 @@ names, as in vstimd: `position_cm`, `counts_per_cm`, `velocity_cm_s`.
 | | |
 |---|---|
 | `GET /api/state` | per axis: counts, `position_cm`, `distance_cm`, `velocity_cm_s`; armed and fired zones; link, stale, ring drops, seq gaps |
-| `WS /api/stream?rate_hz=` | decimated state for browsers; names what a slow consumer lost |
+| `WS /api/stream?rate_hz=` | decimated state for browsers. Every frame carries **`lost_before`**: samples the daemon never received since the frame before, accumulated across the ones decimation dropped |
 | `POST /api/position/zero` | moves the API origin (never the published accumulator) |
 
 ### Path travelled
@@ -709,11 +749,54 @@ calibration is never silently reinterpreted under another.
 
 `/elements/mousewheeld.js`, the contract statemachined's `docs/developer/daemon.md`
 §5 defines: custom elements served by the daemon, talking to the daemon directly.
-Panels: device and link, a live position and velocity trace, the zone-set editor
-with a 1-D track diagram, calibration (the measurement procedure as a guided
-panel), and the serial monitor. mDNS `_mousewheeld._tcp` with the TXT keys
-statemachined publishes (`id`, `version`, `api`, `elements`, `device`, `port`)
-plus `pub`. The console adds one line to `SERVICE_TYPES`.
+mDNS `_mousewheeld._tcp` with the TXT keys statemachined publishes (`id`,
+`version`, `api`, `elements`, `device`, `port`) plus `pub`. The console adds one
+line to `SERVICE_TYPES`.
+
+**Written, in `web/elements/`, ahead of the daemon** — against the mock in
+*Developing without a daemon*, not against a running rig. Five tags, and a
+console depends on those names:
+
+| | |
+|---|---|
+| `mousewheeld-device` | is a board attached, which firmware, and is the link still delivering — with the counters that say so: seq gaps, ring drops, stream rate against the display it feeds |
+| `mousewheeld-trace` | position and velocity as they arrive, **device velocity beside host velocity**, zone hits ruled on the same time base, and reported loss drawn as a break in the line |
+| `mousewheeld-zones` | the store, the set as JSON with `validate` against the live calibration, arm/disarm with an origin and a per-trial patch, and a **1-D track diagram**: the zones as bands, the animal as a marker, wrapped where the set wraps |
+| `mousewheeld-calibration` | the numbers in force, and the guided measurement — name a distance, roll the wheel, read measured against configured, apply as a separate press |
+| `mousewheeld-monitor` | the wire, both directions, uninterpreted, with the sample lines filtered out by default because at stream rate they bury everything else |
+
+Conventions, each of them statemachined's for a reason and rewritten here:
+poll at 1 Hz and open a socket only where the thing is a stream (the trace and
+the monitor); build the DOM rather than concatenate into `innerHTML`, because
+a zone named `<script>` is otherwise an execution; one adopted stylesheet whose
+tokens a console can override; and **a refusal outlives the next poll** —
+cleared by another action, never by a successful read a second later.
+
+Two things the panels settled about the API rather than merely displayed:
+
+- **`lost_before` on the stream** (above). The trace panel first inferred loss
+  from a `seq` jump, which drew a healthy 500 Hz rig as a hedge of holes: a
+  decimated stream skips `seq` by design, and only the daemon can tell
+  decimation from loss.
+- **The zone editor is the JSON, not a form.** The zone set is one type on the
+  daemon — the body, the stored file, the compiler's input — and a form here
+  would be a second copy of that schema, drifting from the first field added.
+  What the panel owes instead is the diagram and `validate`.
+
+### Developing without a daemon
+
+`dev/mock/mousewheeld_mock.py` — standard library only, no dependencies —
+answers the routes in *The API* with a simulated wheel behind them: an animal
+that runs in bouts, two velocities that differ the way the real two will, lost
+samples, zones that fire on entry, and the wire log both directions. It serves
+`/elements/` and a page that mounts all five panels, so the UI can be built and
+looked at now instead of at M6.
+
+**It is deleted the day the real daemon serves `/elements/`.** It is a fixture,
+not a second implementation: it does not persist, does not talk to a board, and
+its answers are hand-written rather than derived from the Rust types. At M2 the
+panels are re-checked against `/api/openapi.json`, which is the copy that cannot
+drift.
 
 ---
 
@@ -801,9 +884,9 @@ contract. Each is rewritten here to this project's shapes.
 | **M0** | ⬜ | Firmware core: counter extension, origin/odometer, zones, rings, framing, JSON reader, fixed writers. Host tests green under gcc/clang and sanitizers |
 | **M1** | ⬜ | Teensy 4.1 HAL, then ESP32 HAL. Analog output, flash, debug mode. **Scan rate and link cost measured and asserted** |
 | **M2** | ⬜ | Daemon: real-time thread (link, parser, clock, continuity, ring, recording) and the control side — device session, state, stream, calibration, config, marks, OpenAPI. Python client |
-| **M3** | ⬜ | vinput producer, **built with vstimd's `vinput` crate and `LinearNav3D`**. Encoder-to-photon latency measured |
+| **M3** | ⬜ | vinput producer, through vstimd's `vinput` crate (which exists, with `LinearNav3D`, and is waiting for a writer). Encoder-to-photon latency measured |
 | **M4** | ⬜ | ZMQ PUB with `events.proto`; `mousewheeld relay` |
 | **M5** | ⬜ | Zones end to end: line map from the rig config, store, patches, compiler, arm, flash, TTL into statemachined and daqd |
-| **M6** | ⬜ | Web client (console elements), mDNS, packaging |
+| **M6** | 🟨 | Web client: the five console elements are **written and driven against the mock** (`web/elements/`, `dev/mock/`). Left: serving them from the daemon's binary with `rust-embed`, re-checking them against the generated OpenAPI, mDNS, packaging |
 | **M7** | ⬜ | triald: marks, `mousewheel_zone_set`, contribution; a contracts end-to-end stage |
 | — | ⬜ | 2-D ball: optical sensor HAL, ball calibration, `x`/`y`/`yaw` descriptor — when the hardware exists |
