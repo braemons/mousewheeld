@@ -26,12 +26,12 @@ service Zones {
   }
 
   // One stored set, exactly as it is on disk.
-  rpc ReadZoneSet(ZoneSetName) returns (ZoneSetDocument) {
+  rpc ReadZoneSet(ZoneSetName) returns (ZoneSet) {
     option (braemons.v1.route) = { method: "GET", path: "/api/zone-sets/{name}" };
   }
 
   // Store a set. Refused if it does not parse or does not compile.
-  rpc ReplaceZoneSet(WriteZoneSet) returns (ZoneSetDocument) {
+  rpc ReplaceZoneSet(WriteZoneSet) returns (ZoneSet) {
     option (braemons.v1.route) = {
       method: "PUT",
       path: "/api/zone-sets/{name}",
@@ -44,7 +44,7 @@ service Zones {
   // The body goes through the daemon's own deserializer and compiler, so what
   // comes back is the refusal the real thing would give. There is no second,
   // looser description of a zone set in a browser to disagree with it.
-  rpc ValidateDraft(ZoneSetDocument) returns (ValidationReport) {
+  rpc ValidateDraft(ZoneSet) returns (ValidationReport) {
     option (braemons.v1.route) = {
       method: "POST",
       path: "/api/zone-sets/validate",
@@ -58,11 +58,16 @@ service Zones {
     option (braemons.v1.route) = { method: "POST", path: "/api/zone-sets/{name}/validate" };
   }
 
-  // The zone set document's JSON Schema, for an editor or a checker.
+  // The JSON Schema of a zone set **file**, for an editor or a checker.
   //
-  // Committed in this repository as well, at `docs/reference/zone-set.schema.json`,
-  // because a zone set is a *file*: an editor and CI must reach its schema
-  // without a daemon running.
+  // Not the schema of `ZoneSet` above — that one is this file, and a client
+  // generates from it. This is the stored spelling: `"$goal_cm"` for a
+  // reference, `"displacement"` for a metric, which is what somebody has open
+  // in an editor. Arbitrary JSON, so it is carried as such.
+  //
+  // Committed in this repository as well, at
+  // `docs/reference/zone-set.schema.json`, because an editor and CI must reach
+  // it without a daemon running.
   rpc ReadZoneSetSchema(google.protobuf.Empty) returns (google.protobuf.Struct) {
     option (braemons.v1.route) = { method: "GET", path: "/api/zone-sets/schema" };
   }
@@ -104,33 +109,140 @@ message ZoneSetName {
 
 message WriteZoneSet {
   string name = 1;
-  ZoneSetDocument zone_set = 2 [json_name = "zone_set"];
+  ZoneSet zone_set = 2 [json_name = "zone_set"];
 }
 
-// **A zone set is a file, and files travel as themselves.**
+// A named set, as the API carries it.
 //
-// Everything else in this interface is a message: a shape this daemon chose,
-// which no human types and which may therefore wear protobuf's JSON habits.
-// A zone set is the opposite. Somebody writes it in an editor, reviews it in a
-// diff, and copies it between rigs, and its shape has two things protobuf
-// cannot render without changing what a person types:
+// **The file on disk is a storage format, not this.** A stored zone set keeps
+// its own spelling — a bound written `"$goal_cm"`, a metric written
+// `"displacement"` — because somebody edits it in a text editor and reviews it
+// in a diff, and `docs/reference/zone-set.schema.json` is its schema. The
+// daemon converts at the same seam it converts everything else, exactly as it
+// does for the TOML rig config.
 //
-//   - a bound is a number, `null`, or `"$goal_cm"` — three types in one
-//     position, which in protobuf is a `oneof` and on the wire becomes
-//     `{"reference": "goal_cm"}`;
-//   - `"metric": "displacement"` is lowercase because a person wrote it, and a
-//     protobuf enum would spell it `ZONE_METRIC_DISPLACEMENT`.
+// This was carried as an opaque document at first, to keep one spelling for
+// both. That put the one part of the API a client most wants to construct
+// beyond the reach of a type, and a schema for it in a second file. The public
+// interface is defined in one place and strongly typed, or it is not; the file
+// keeps its own shape and the daemon pays for the difference.
 //
-// A file that could not be pasted into the editing panel, or a panel whose
-// JSON could not be saved as a file, would be the cost of describing it here.
-// So the document is carried as itself, and its schema — the real one, that
-// the daemon's own deserializer produces — is `ReadZoneSetSchema` above and
-// `docs/reference/zone-set.schema.json` in this repository.
+// Declaration order resolves two zones firing in one scan: both still fire,
+// and the order is the order of their `zone_hit` messages.
+message ZoneSet {
+  // A URL for this set's JSON Schema, carried so an editor can validate the
+  // *file* as somebody types it. Stored as `$schema`; named for what it is
+  // here, since a leading `$` is a JSON-editor convention and not a field name.
+  //
+  // It exists because the file refuses unknown fields: without somewhere to put
+  // it, the one line that makes a hand-edited file checkable would itself be a
+  // refusal.
+  optional string schema_url = 1 [json_name = "schema_url"];
+
+  // Bumped by whoever edits the set. The board reports the version it holds, so
+  // "is the board running what I think it is" is one comparison.
+  uint32 zone_set_version = 2 [json_name = "zone_set_version"];
+
+  repeated Zone zones = 3;
+}
+
+message Zone {
+  string name = 1;
+  ZoneShape shape = 2;
+
+  // The axes this zone constrains, in the order its bounds are given. One for a
+  // wheel; a 2-D rectangle on a ball is already expressible.
+  repeated string axes = 3;
+
+  ZoneMetric metric = 4;
+
+  // The low end per axis, in the order of `axes`.
+  repeated ZoneBound min_cm = 5 [json_name = "min_cm"];
+
+  // The high end per axis.
+  repeated ZoneBound max_cm = 6 [json_name = "max_cm"];
+
+  // A circular track: the metric is evaluated modulo this period.
+  optional double wrap_cm = 7 [json_name = "wrap_cm"];
+
+  FireRule fire = 8;
+
+  optional double hysteresis_cm = 9 [json_name = "hysteresis_cm"];
+
+  // Fire on arming if the animal is already inside. Off by default: a zone
+  // fires on the false→true **edge** of "inside", so arming a zone somebody is
+  // standing in does not fire it.
+  bool level = 10;
+
+  ZoneOutput output = 11;
+}
+
+// One end of a zone's interval on one axis.
 //
-// This is `contracts/DAEMON_LAYOUT.md` §2, *what proto does not touch*: the
-// file wins, because a person types it.
-message ZoneSetDocument {
-  google.protobuf.Struct document = 1;
+// Three things, and they are not interchangeable: a number, an **open** bound
+// (neither arm set — "everything past here"), and a **reference** to a
+// per-trial value resolved from the patch given at arm time.
+//
+// A reference that reaches the compiler unresolved is a refusal naming the
+// name, never a zero: a goal distance that silently became zero is a trial that
+// looks like it ran. The board never sees a reference; substitution happens
+// host-side, before compilation.
+message ZoneBound {
+  oneof bound {
+    double value = 1;
+    // The name without its `$`. The file writes `"$goal_cm"`; the sigil is the
+    // file's way of telling a number from a name in one JSON position, and the
+    // oneof is this interface's.
+    string reference = 2;
+  }
+}
+
+message ZoneOutput {
+  // A **name** from the rig config's line map, never a pin number.
+  string line = 1;
+
+  OutputAction action = 2;
+
+  // Pulse width. Ignored by a `level` output.
+  optional uint32 ms = 3;
+}
+
+// The only shape today, and a discriminator rather than a flag: a future
+// `circle` or `polygon` is a new value, and a shape the firmware does not know
+// is refused whole rather than half-evaluated.
+enum ZoneShape {
+  ZONE_SHAPE_UNSPECIFIED = 0;
+  ZONE_SHAPE_RECT = 1;
+}
+
+// Which quantity a zone is compared against.
+enum ZoneMetric {
+  // Omitted. Treated as `DISPLACEMENT`, because a corridor is what a wheel
+  // usually drives.
+  ZONE_METRIC_UNSPECIFIED = 0;
+  // Signed, `counts − origin`. What a corridor position is.
+  ZONE_METRIC_DISPLACEMENT = 1;
+  // Direction-free odometer, `Σ |Δcounts|`. What "how much did it run" is.
+  ZONE_METRIC_DISTANCE = 2;
+}
+
+// What happens after a zone fires.
+enum FireRule {
+  FIRE_RULE_UNSPECIFIED = 0;
+  // Disarm after firing.
+  FIRE_RULE_ONCE = 1;
+  // Re-arm once the position has left the zone by `hysteresis_cm`, so encoder
+  // jitter at a boundary is not a pulse train.
+  FIRE_RULE_REARM = 2;
+}
+
+// How the line behaves while the condition holds.
+enum OutputAction {
+  OUTPUT_ACTION_UNSPECIFIED = 0;
+  // High for at most `ms`.
+  OUTPUT_ACTION_PULSE = 1;
+  // High while inside, with the same hysteresis.
+  OUTPUT_ACTION_LEVEL = 2;
 }
 
 message ArmRequest {
@@ -184,26 +296,25 @@ message ZoneStatus {
 
   // Per axis, in the order the zone names them. An absent value is an open
   // bound — everything past the other end.
-  repeated OpenOrValue min_cm = 6 [json_name = "min_cm"];
-  repeated OpenOrValue max_cm = 7 [json_name = "max_cm"];
+  //
+  // A **resolved** bound, deliberately a different type from `ZoneBound`: what
+  // is armed can no longer be a `$name`, and the type saying so is the point of
+  // having types.
+  repeated ResolvedBound min_cm = 6 [json_name = "min_cm"];
+  repeated ResolvedBound max_cm = 7 [json_name = "max_cm"];
 
   // The period the metric is taken modulo, if the zone wraps.
   optional double wrap_cm = 8 [json_name = "wrap_cm"];
 
-  // `displacement` or `distance`, spelled as the zone set file spells it.
-  //
-  // A string and not an enum on purpose: the same value is written by hand in
-  // a zone set, and a person who reads `"metric": "displacement"` in the file
-  // must not find `ZONE_METRIC_DISPLACEMENT` in the panel describing it.
-  string metric = 9;
+  ZoneMetric metric = 9;
 }
 
-// A bound that may be open.
+// A bound that may be open, after arming resolved it.
 //
 // protobuf has no nullable double inside a repeated field, and a repeated
 // `optional double` is not a thing, so the absence has to be carried by a
-// message. `{"value": 30}` or `{}`.
-message OpenOrValue {
+// message: `{"value": 30}` or `{}`.
+message ResolvedBound {
   optional double value = 1;
 }
 
