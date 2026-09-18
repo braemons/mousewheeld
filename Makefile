@@ -41,7 +41,7 @@ run: build ## Serve against a real board, from the installed rig config
 	./target/release/mousewheeld serve --port $(PORT)
 
 # `cargo run` without --release, deliberately: rust-embed serves the elements
-# from disk in a debug build, so editing web/elements/*.js and reloading the
+# from disk in a debug build, so editing client/web/elements/*.js and reloading the
 # page is enough. A release build embeds them, and a panel that did not change
 # after an edit is almost always this.
 dev: ## A wheel on a thread, elements served from disk, panels at http://127.0.0.1:$(PORT)/

@@ -29,7 +29,7 @@ use axum::Router;
 use crate::daemon_state::Daemon;
 
 #[derive(rust_embed::RustEmbed)]
-#[folder = "../web/elements"]
+#[folder = "../client/web/elements"]
 struct Elements;
 
 pub fn routes() -> Router<Arc<Daemon>> {

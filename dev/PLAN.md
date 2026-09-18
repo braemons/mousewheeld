@@ -12,7 +12,7 @@
 > design four times: *lost_before* in *The API*, the armed bounds in *Trigger
 > zones*, and `answers` and the set's `name` in the protocol.
 > `dev/throwaway/` holds the host producer that drives vstimd from the old
-> sketch today. The preliminary ESP32 sketch in `rotary-encoder/` (imported
+> sketch today. The preliminary ESP32 sketch in `firmware/` (imported
 > with its history from `joschaschmiedt/mouse_wheel`) is kept for reference and
 > not built on: it is a hand-knob encoder library with a 16-bit position,
 > polled on any received byte, and none of it survives the design below.
@@ -589,7 +589,7 @@ mousewheeld/
 │       ├── api/               one *_routes.rs per group in *The API*, openapi.rs
 │       ├── relay/             ZMQ SUB → local vinput shm
 │       └── mdns_service_advertisement.rs
-├── web/elements/              mousewheeld.js and its panels (embedded) — BUILT
+├── client/web/elements/       mousewheeld.js and its panels (embedded) — BUILT
 ├── Makefile                   build · check · dev · openapi · package — BUILT
 ├── client/python/             mousewheeld-client
 ├── tests/core/                firmware core, mirrors firmware/core
@@ -771,7 +771,7 @@ mDNS `_mousewheeld._tcp` with the TXT keys statemachined publishes (`id`,
 `version`, `api`, `elements`, `device`, `port`) plus `pub`. The console adds one
 line to `SERVICE_TYPES`.
 
-**Written, in `web/elements/`, ahead of the daemon** — against the mock in
+**Written, in `client/web/elements/`, ahead of the daemon** — against the mock in
 *Developing without a daemon*, not against a running rig. Five tags, and a
 console depends on those names:
 

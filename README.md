@@ -41,7 +41,7 @@ scan that sees the count, and put on a TTL line.
 | **The wire** | [`docs/reference/protocol.md`](docs/reference/protocol.md), and `daemon/src/link/` — framing, CRC-16/CCITT-FALSE, the typed messages, the clock correlation and the continuity offset that keeps a published accumulator from stepping backwards across a board reset |
 | **The zone-set store and compiler** | centimetres in, integer counts out, against a named calibration |
 | **Calibration**, with its guided measurement | `daemon/src/api/calibration_routes.rs` |
-| **The console panels** | `web/elements/` — five custom elements, no build step, served by this daemon at its own version |
+| **The console panels** | `client/web/elements/` — five custom elements, no build step, served by this daemon at its own version |
 | **Publishing to vstimd** | `daemon/src/publish/` — the `vinput` segment, written first of everything a sample causes, in centimetres, through vstimd's own crate pinned at `v0.3.0-alpha1` |
 | **Packaging** | `packaging/` — nfpm, a systemd unit, a udev rule, sysusers |
 | **The API** | [`docs/reference/api.md`](docs/reference/api.md), written by hand — what a route is for and what a refusal means. The machine-readable schema is served at `/api/openapi.json`, generated from the same types, so this document never repeats a field list |
@@ -61,7 +61,7 @@ make schema       # regenerate docs/reference/zone-set.schema.json from the type
 make package      # deb and rpm
 ```
 
-`make dev` runs a debug build on purpose: `rust-embed` serves `web/elements/`
+`make dev` runs a debug build on purpose: `rust-embed` serves `client/web/elements/`
 from disk there, so editing a panel and reloading the page is enough. A release
 binary embeds them, and a panel that did not change after an edit is almost
 always a release build.
