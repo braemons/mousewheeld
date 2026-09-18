@@ -24,6 +24,7 @@ pub mod device;
 pub mod error;
 pub mod line_map;
 pub mod state;
+pub mod version;
 pub mod zone_set;
 
 pub use error::{ApiError, ApiResult};

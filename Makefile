@@ -8,7 +8,7 @@ PORT ?= 8082
 VERSION ?= $(shell sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
 ARCH ?= amd64
 
-.PHONY: build test check run dev openapi package clean help
+.PHONY: build test check check-openapi run dev openapi package clean help
 
 help:
 	@sed -n 's/^\([a-z-]*\):.*## \(.*\)/  \1|\2/p' $(MAKEFILE_LIST) | column -t -s '|'
@@ -19,10 +19,11 @@ build: ## Release binary, with the console panels embedded in it
 test: ## The zone compiler's tests
 	$(CARGO) test --release
 
-check: ## Build, clippy and tests, as CI would
+check: ## Build, clippy, tests, and the committed API document, as CI would
 	$(CARGO) build --release
 	$(CARGO) clippy --release --all-targets -- -D warnings
 	$(CARGO) test --release
+	@$(MAKE) --no-print-directory check-openapi
 
 run: build ## Serve against a real board, from the installed rig config
 	./target/release/mousewheeld serve --port $(PORT)
@@ -36,13 +37,27 @@ dev: ## A wheel on a thread, elements served from disk, panels at http://127.0.0
 		--rig-config packaging/mousewheeld-rig-config.toml \
 		--storage-dir ./dev/store
 
-openapi: build ## Write the generated API document to dist/openapi.json
-	@mkdir -p dist
+# The document is GENERATED from the types and COMMITTED to the repository, and
+# it needs to be both. Generated, so there is no second copy of the schema to
+# drift from the code. Committed, so the interface is a file a reviewer reads
+# and a pull request diffs, instead of something that only exists once a binary
+# is running. `check` fails when the two disagree.
+openapi: build ## Regenerate docs/reference/openapi.json from the types
 	@./target/release/mousewheeld serve --simulate --port 8099 --storage-dir ./dev/store & \
 	 pid=$$!; sleep 1; \
-	 curl -fsS http://127.0.0.1:8099/api/openapi.json -o dist/openapi.json; \
+	 curl -fsS http://127.0.0.1:8099/api/openapi.json \
+	   | python3 -m json.tool --indent 2 > docs/reference/openapi.json; \
 	 kill $$pid; \
-	 echo "dist/openapi.json"
+	 echo "docs/reference/openapi.json"
+
+check-openapi: ## Fail if the committed document is not what the code produces
+	@$(MAKE) --no-print-directory openapi
+	@git diff --quiet -- docs/reference/openapi.json || { \
+	  echo "docs/reference/openapi.json is out of date — the API changed:"; \
+	  git --no-pager diff --stat -- docs/reference/openapi.json; \
+	  echo "commit the regenerated document with the change that caused it."; \
+	  exit 1; \
+	}
 
 package: build ## deb and rpm, from packaging/nfpm.yaml
 	@mkdir -p dist

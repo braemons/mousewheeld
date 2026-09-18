@@ -9,6 +9,7 @@ use axum::Json;
 
 use crate::daemon_state::Daemon;
 use crate::model::device::{DeviceInfo, FirmwareVersions, WireLog};
+use crate::model::version::{DeviceProtocol, VersionReport};
 use crate::model::{ApiError, ApiResult};
 
 /// What board is attached, and how the link behaves.
@@ -20,6 +21,33 @@ pub async fn read_device(State(daemon): State<Arc<Daemon>>) -> Json<DeviceInfo> 
     let port = daemon.config.lock().unwrap().device.port.clone();
     Json(daemon.device.info(port))
 }
+
+/// What this daemon is, and what it speaks.
+///
+/// **Advertised, never gated.** A client that needs a field added last month
+/// asks this first; a daemon that refused an older client's request on the
+/// strength of a version would make every upgrade a coordinated one.
+#[utoipa::path(
+    get, path = "/api/version", tag = "device",
+    responses((status = 200, body = VersionReport)),
+)]
+pub async fn read_version(State(daemon): State<Arc<Daemon>>) -> Json<VersionReport> {
+    let (speaks, floor, board) = daemon.device.protocol();
+    Json(VersionReport {
+        daemon: env!("CARGO_PKG_VERSION").to_string(),
+        api: API_VERSION,
+        device_protocol: DeviceProtocol { speaks, floor, board },
+        vinput_layout: vinput::layout::VERSION,
+    })
+}
+
+/// The API contract's major version — not the daemon's release.
+///
+/// Within it every change is additive: a field, a route or an enum value may
+/// appear, and nothing is removed, renamed or given a new meaning. It moves
+/// when that promise is broken, which from 1.0 onward is a deliberate and rare
+/// event (`contracts/INTERACTIONS.md` §11).
+const API_VERSION: u32 = 1;
 
 /// Open the link, or say why not.
 #[utoipa::path(

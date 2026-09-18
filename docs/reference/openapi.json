@@ -1,0 +1,1998 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "mousewheeld",
+    "description": "The locomotion input of a braemons rig: a running wheel, read and published.\n\nUnits are in the names \u2014 `position_cm`, `counts_per_cm`, `velocity_cm_s`. Counts are the device's only unit; everything that leaves here is centimetres. Unknown fields are refused rather than defaulted.",
+    "license": {
+      "name": "AGPL-3.0-or-later"
+    },
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/calibration": {
+      "get": {
+        "tags": [
+          "calibration"
+        ],
+        "operationId": "read_calibration",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Calibration"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "calibration"
+        ],
+        "summary": "Change a calibration by hand. Every field optional; the rest is left alone.",
+        "operationId": "replace_calibration",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CalibrationPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Calibration"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "no such axis"
+          }
+        }
+      }
+    },
+    "/api/calibration/ball": {
+      "get": {
+        "tags": [
+          "calibration"
+        ],
+        "summary": "The 2-D skeleton: modelled, routed, and refused by name.",
+        "operationId": "read_ball",
+        "responses": {
+          "501": {
+            "description": "arrives with the hardware"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "calibration"
+        ],
+        "operationId": "replace_ball",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BallCalibration"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "501": {
+            "description": "arrives with the hardware"
+          }
+        }
+      }
+    },
+    "/api/calibration/measure/apply": {
+      "post": {
+        "tags": [
+          "calibration"
+        ],
+        "summary": "Make the measurement the rig's truth.",
+        "operationId": "apply_measurement",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeasurementApplied"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "nothing measured"
+          }
+        }
+      }
+    },
+    "/api/calibration/measure/finish": {
+      "post": {
+        "tags": [
+          "calibration"
+        ],
+        "summary": "Stop counting and report \u2014 measured beside configured, and what the\ndifference looks like.",
+        "operationId": "finish_measurement",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeasurementResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "nothing is being measured"
+          }
+        }
+      }
+    },
+    "/api/calibration/measure/start": {
+      "post": {
+        "tags": [
+          "calibration"
+        ],
+        "summary": "Note the counter and start counting.",
+        "operationId": "start_measurement",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartMeasurement"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeasurementStarted"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "no board"
+          }
+        }
+      }
+    },
+    "/api/config": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "operationId": "read_config",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigView"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "config"
+        ],
+        "operationId": "patch_config",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "refused"
+          }
+        }
+      }
+    },
+    "/api/device": {
+      "get": {
+        "tags": [
+          "device"
+        ],
+        "summary": "What board is attached, and how the link behaves.",
+        "operationId": "read_device",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceInfo"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/device/connect": {
+      "post": {
+        "tags": [
+          "device"
+        ],
+        "summary": "Open the link, or say why not.",
+        "operationId": "connect",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceInfo"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "no board on this host"
+          }
+        }
+      }
+    },
+    "/api/device/firmware": {
+      "get": {
+        "tags": [
+          "device"
+        ],
+        "summary": "What the board runs, and what this daemon could put on it.",
+        "operationId": "read_firmware",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FirmwareVersions"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/device/monitor": {
+      "get": {
+        "tags": [
+          "device"
+        ],
+        "summary": "The wire's recent past: the whole conversation, and the last hundred\nsamples.",
+        "description": "A monitor that started at \"now\" would miss every fault that had already\nhappened, which is most of them \u2014 so the ring is handed over first and the\nstream follows it. Samples are capped rather than the conversation, because\nat 500 Hz they are the only thing that would come back.",
+        "operationId": "read_wire_log",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WireLog"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/lines": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "summary": "The output line map, as the rig config describes it. Not writable: see the\nmodule note.",
+        "operationId": "read_lines",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LineMap"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/position/zero": {
+      "post": {
+        "tags": [
+          "state"
+        ],
+        "summary": "Move the API origin \u2014 never the accumulator a camera differences.",
+        "operationId": "zero_position",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ZeroRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RigState"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/state": {
+      "get": {
+        "tags": [
+          "state"
+        ],
+        "summary": "Per axis: counts, position, distance, both velocities. Plus whether the\nlink is still delivering, because everything above is only as true as that.",
+        "operationId": "read_state",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RigState"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/version": {
+      "get": {
+        "tags": [
+          "device"
+        ],
+        "summary": "What this daemon is, and what it speaks.",
+        "description": "**Advertised, never gated.** A client that needs a field added last month\nasks this first; a daemon that refused an older client's request on the\nstrength of a version would make every upgrade a coordinated one.",
+        "operationId": "read_version",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionReport"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/zone-sets": {
+      "get": {
+        "tags": [
+          "zones"
+        ],
+        "operationId": "list_zone_sets",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ZoneSetNames"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/zone-sets/{name}": {
+      "get": {
+        "tags": [
+          "zones"
+        ],
+        "operationId": "read_zone_set",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "description": "the set's name in the store",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ZoneSet"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "no such set"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Write a set to the store. Stored as authored \u2014 `$name` references intact,\ncentimetres intact \u2014 because the store is what a person edits and copies\nbetween rigs. Compilation happens at arm.",
+        "operationId": "replace_zone_set",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "description": "the set's name in the store",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ZoneSet"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ZoneSet"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "refused"
+          }
+        }
+      }
+    },
+    "/api/zone-sets/{name}/validate": {
+      "post": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Compile against the current calibration and the board's capacities, and\nupload nothing.",
+        "description": "This is what lets a zone set be wrong in an editor rather than at arm time,\nwhich is the difference between a message on screen and a TTL that fires in\nthe wrong place in the middle of a session.",
+        "operationId": "validate_zone_set",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "description": "the set's name in the store",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationReport"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/zones": {
+      "get": {
+        "tags": [
+          "zones"
+        ],
+        "operationId": "read_armed",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArmedZones"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/zones/arm": {
+      "post": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Resolve the patch, compile, upload, wait for `armed`.",
+        "operationId": "arm",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArmedZones"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "no set by that name"
+          },
+          "422": {
+            "description": "the set did not compile"
+          },
+          "503": {
+            "description": "no board"
+          }
+        }
+      }
+    },
+    "/api/zones/disarm": {
+      "post": {
+        "tags": [
+          "zones"
+        ],
+        "operationId": "disarm",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArmedZones"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/zones/save": {
+      "post": {
+        "tags": [
+          "zones"
+        ],
+        "summary": "Write the armed set, and its armed state, to the board's flash.",
+        "operationId": "save_to_flash",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceInfo"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "nothing armed"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ApiErrorBody": {
+        "type": "object",
+        "description": "A refusal, as the API renders it.",
+        "required": [
+          "error",
+          "detail",
+          "context"
+        ],
+        "properties": {
+          "context": {
+            "type": "string",
+            "description": "What to change: a zone set's name, the field that did not fit. May be\nempty when the sentence is the whole story."
+          },
+          "detail": {
+            "type": "string",
+            "description": "One sentence, for a person."
+          },
+          "error": {
+            "type": "string",
+            "description": "A stable, machine-readable code \u2014 `no_such_zone_set`, `no_device`."
+          }
+        }
+      },
+      "ArmOrigin": {
+        "type": "string",
+        "description": "Where the metric is measured from.",
+        "enum": [
+          "current",
+          "absolute"
+        ]
+      },
+      "ArmRequest": {
+        "type": "object",
+        "description": "`POST /api/zones/arm`.",
+        "required": [
+          "zone_set"
+        ],
+        "properties": {
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Opaque text stored with the arm \u2014 triald writes `trial 42`. The daemon\nstays trial-blind and hands it back unread."
+          },
+          "origin": {
+            "$ref": "#/components/schemas/ArmOrigin"
+          },
+          "patch": {
+            "type": "object",
+            "description": "Per-trial values for this set's `$name` bounds.",
+            "additionalProperties": {
+              "type": "number",
+              "format": "double"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "zone_set": {
+            "type": "string",
+            "description": "A name from the store. Never a slot: the daemon holds the sets, and a\nname it does not have is a configuration error the caller can report."
+          }
+        },
+        "additionalProperties": false
+      },
+      "ArmedZones": {
+        "type": "object",
+        "description": "`GET /api/zones` \u2014 what is armed, what fired, when.",
+        "required": [
+          "zones"
+        ],
+        "properties": {
+          "arm_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "zone_set": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "zone_set_version": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "zones": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ZoneStatus"
+            }
+          }
+        }
+      },
+      "AxisCalibration": {
+        "type": "object",
+        "description": "One axis' calibration, as the rig config stores it and the API returns it.",
+        "required": [
+          "name",
+          "counts_per_cm"
+        ],
+        "properties": {
+          "counts_per_cm": {
+            "type": "number",
+            "format": "double",
+            "description": "Counts per centimetre of travel at the running surface. The number that\nconverts the device's only unit into everybody else's."
+          },
+          "counts_per_rev": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Encoder counts per revolution, after quadrature \u00d74. Kept for the\narithmetic a measurement is checked against \u2014 a whole-number ratio\nbetween the two is a decoder counting \u00d71 or \u00d72, not a wheel of the wrong\nsize.",
+            "minimum": 0
+          },
+          "diameter_cm": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "The wheel's diameter \u2014 a full extent, never a radius. Porting from a\npackage that specifies radii means doubling at the boundary."
+          },
+          "invert": {
+            "type": "boolean",
+            "description": "Count the other way. Applied by the device to its own accumulator, so\neverything downstream reads a wheel that turns forwards."
+          },
+          "measured_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "When `counts_per_cm` was last measured rather than computed. `None` is\nnot a missing field: it means nobody has ever rolled this wheel against\na tape, and the panels say so."
+          },
+          "name": {
+            "type": "string",
+            "description": "The axis this describes, matching the axis names everywhere else."
+          }
+        },
+        "additionalProperties": false
+      },
+      "AxisCalibrationPatch": {
+        "type": "object",
+        "description": "A change to one axis: everything optional, so a panel can send one field.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "counts_per_cm": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "counts_per_rev": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "diameter_cm": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "invert": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AxisState": {
+        "type": "object",
+        "required": [
+          "name",
+          "counts",
+          "position_cm",
+          "distance_cm",
+          "velocity_cm_s",
+          "device_velocity_cm_s"
+        ],
+        "properties": {
+          "counts": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The device's 64-bit accumulator. The only unit the firmware knows."
+          },
+          "device_velocity_cm_s": {
+            "type": "number",
+            "format": "double",
+            "description": "As the device reported it: counts over a fixed window in its scan, at\nscan resolution. Coarser, and the one the analog output and the zone\nevaluation were actually done against."
+          },
+          "distance_cm": {
+            "type": "number",
+            "format": "double",
+            "description": "Direction-free odometer since the origin was last moved."
+          },
+          "name": {
+            "type": "string"
+          },
+          "position_cm": {
+            "type": "number",
+            "format": "double",
+            "description": "Signed displacement from the origin."
+          },
+          "velocity_cm_s": {
+            "type": "number",
+            "format": "double",
+            "description": "Computed by the host from the sample path."
+          }
+        }
+      },
+      "BallCalibration": {
+        "type": "object",
+        "description": "Declared, refused, and here so the shape of the answer is not a surprise.",
+        "required": [
+          "diameter_cm",
+          "sensor_angles_deg"
+        ],
+        "properties": {
+          "diameter_cm": {
+            "type": "number",
+            "format": "double"
+          },
+          "sensor_angles_deg": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            },
+            "description": "Where each sensor sits, in degrees around the ball."
+          }
+        },
+        "additionalProperties": false
+      },
+      "Calibration": {
+        "type": "object",
+        "description": "Every axis' calibration, plus the 2-D skeleton.",
+        "required": [
+          "axes"
+        ],
+        "properties": {
+          "axes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AxisCalibration"
+            }
+          },
+          "ball": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BallCalibration",
+                "description": "The ball's transform \u2014 sensor mounting angle, ball diameter, the map\nonto `x`, `y` and `yaw`. Always `None` today; its routes answer 501. It\nexists in the model so that adding the hardware is filling in rather\nthan redesigning."
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "CalibrationPatch": {
+        "type": "object",
+        "required": [
+          "axes"
+        ],
+        "properties": {
+          "axes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AxisCalibrationPatch"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "Capacities": {
+        "type": "object",
+        "description": "Compile-time limits, reported at `hello`.",
+        "required": [
+          "n_axes",
+          "max_zones",
+          "max_lines",
+          "scan_hz"
+        ],
+        "properties": {
+          "max_lines": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "max_zones": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "n_axes": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "scan_hz": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The scan the firmware runs its counters and zones at.",
+            "minimum": 0
+          }
+        }
+      },
+      "ConfigPatch": {
+        "type": "object",
+        "description": "`PATCH /api/config`. Absent fields are left alone.",
+        "properties": {
+          "display_hz": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "rate_hz": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "ring_minutes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "ConfigView": {
+        "type": "object",
+        "description": "`GET /api/config` \u2014 the settings a session may change, and the ones it may\nonly read, in one answer.",
+        "required": [
+          "rate_hz",
+          "display_hz",
+          "ring_minutes",
+          "shm_name",
+          "shm_open",
+          "shm_writes",
+          "event_port",
+          "port",
+          "starves_the_display"
+        ],
+        "properties": {
+          "display_hz": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "event_port": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "port": {
+            "type": "string",
+            "description": "Read-only here: wiring is changed where wiring is described."
+          },
+          "rate_hz": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "ring_minutes": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "shm_name": {
+            "type": "string"
+          },
+          "shm_open": {
+            "type": "boolean",
+            "description": "Whether that segment is actually open. A name in a config file and a\nmapped segment are different things, and the difference is the whole\nreason a corridor sometimes does not move."
+          },
+          "shm_writes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Writes that have reached it since it was created.",
+            "minimum": 0
+          },
+          "starves_the_display": {
+            "type": "boolean",
+            "description": "True when `rate_hz` is at or below `display_hz`."
+          }
+        }
+      },
+      "DeviceInfo": {
+        "type": "object",
+        "required": [
+          "connected",
+          "port",
+          "board",
+          "firmware_version",
+          "protocol_version",
+          "uptime_device_us",
+          "capacities",
+          "link"
+        ],
+        "properties": {
+          "board": {
+            "type": "string",
+            "description": "`teensy41`, `esp32`, or `simulated`."
+          },
+          "capacities": {
+            "$ref": "#/components/schemas/Capacities"
+          },
+          "connected": {
+            "type": "boolean"
+          },
+          "firmware_version": {
+            "type": "string"
+          },
+          "flashed_zone_set": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/FlashedZoneSet",
+                "description": "The set written to the board's flash, if any: a standalone rig comes up\nwith its zones, and the board reports which copy it holds."
+              }
+            ]
+          },
+          "link": {
+            "$ref": "#/components/schemas/LinkStats"
+          },
+          "port": {
+            "type": "string",
+            "description": "The serial port this daemon owns, from the rig config."
+          },
+          "protocol_version": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The wire protocol version the board greeted with.",
+            "minimum": 0
+          },
+          "uptime_device_us": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The board's clock since it booted \u2014 a reset shows up here before it\nshows up anywhere else.",
+            "minimum": 0
+          }
+        }
+      },
+      "DeviceProtocol": {
+        "type": "object",
+        "required": [
+          "speaks",
+          "floor"
+        ],
+        "properties": {
+          "board": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "What the attached board greeted with, if one has.",
+            "minimum": 0
+          },
+          "floor": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The oldest it will talk to. Below this a board is refused by name rather\nthan half-understood.",
+            "minimum": 0
+          },
+          "speaks": {
+            "type": "integer",
+            "format": "int32",
+            "description": "What this daemon sends in `hello`.",
+            "minimum": 0
+          }
+        }
+      },
+      "FireRule": {
+        "type": "string",
+        "description": "What happens after a zone fires.",
+        "enum": [
+          "once",
+          "rearm"
+        ]
+      },
+      "FirmwareVersions": {
+        "type": "object",
+        "description": "`GET /api/device/firmware`.",
+        "required": [
+          "running",
+          "available"
+        ],
+        "properties": {
+          "available": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "What this daemon ships and could flash. Empty until the firmware exists."
+          },
+          "running": {
+            "type": "string",
+            "description": "What the attached board is running."
+          }
+        }
+      },
+      "FlashedZoneSet": {
+        "type": "object",
+        "required": [
+          "name",
+          "version"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "LineMap": {
+        "type": "object",
+        "required": [
+          "lines"
+        ],
+        "properties": {
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OutputLine"
+            }
+          }
+        }
+      },
+      "LinkHealth": {
+        "type": "object",
+        "description": "Whether what the rest of this answer says can be believed.",
+        "required": [
+          "seq_gaps",
+          "ring_drops",
+          "measured_rate_hz",
+          "stale"
+        ],
+        "properties": {
+          "measured_rate_hz": {
+            "type": "number",
+            "format": "double",
+            "description": "What the samples are actually arriving at, as opposed to what was asked\nfor. The two differing is the finding."
+          },
+          "ring_drops": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The device's own rings overflowed: the firmware telling on itself.",
+            "minimum": 0
+          },
+          "seq_gaps": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Samples the daemon never received. **A path with a hole in it says so**\nrather than reporting a shorter distance that looks complete.",
+            "minimum": 0
+          },
+          "stale": {
+            "type": "boolean",
+            "description": "No sample for longer than the staleness window. Everything above is the\nlast thing that was true."
+          }
+        }
+      },
+      "LinkState": {
+        "type": "object",
+        "required": [
+          "connected"
+        ],
+        "properties": {
+          "connected": {
+            "type": "boolean"
+          }
+        }
+      },
+      "LinkStats": {
+        "type": "object",
+        "required": [
+          "connection_count"
+        ],
+        "properties": {
+          "connection_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "How many times this daemon has (re)connected to a board. A number that\nclimbs on its own is a cable.",
+            "minimum": 0
+          },
+          "last_error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The last thing the board refused, kept because it is usually the answer."
+          }
+        }
+      },
+      "MeasurementApplied": {
+        "type": "object",
+        "required": [
+          "axis",
+          "counts_per_cm",
+          "zone_sets_invalidated"
+        ],
+        "properties": {
+          "axis": {
+            "type": "string"
+          },
+          "counts_per_cm": {
+            "type": "number",
+            "format": "double"
+          },
+          "zone_sets_invalidated": {
+            "type": "boolean",
+            "description": "Compiled zone sets are stale now, and the next arm recompiles. A set\narmed under one calibration is never silently reinterpreted under\nanother."
+          }
+        }
+      },
+      "MeasurementResult": {
+        "type": "object",
+        "description": "What the wheel said, beside what the config says. Never applied on its own:\na calibration change invalidates every compiled zone set, so it is a second,\ndeliberate press.",
+        "required": [
+          "axis",
+          "known_distance_cm",
+          "counts",
+          "measured_counts_per_cm",
+          "configured_counts_per_cm"
+        ],
+        "properties": {
+          "axis": {
+            "type": "string"
+          },
+          "configured_counts_per_cm": {
+            "type": "number",
+            "format": "double"
+          },
+          "counts": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "counts_per_rev": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "decoding_suspect": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Set when the measurement is a whole-number multiple of the configured\nvalue: a decoding mistake rather than a wheel, and worth saying in\nwords before somebody applies it."
+          },
+          "implied_circumference_cm": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "The circumference the measurement implies, when the counts per\nrevolution are known \u2014 the number to hold against the wheel with a tape."
+          },
+          "known_distance_cm": {
+            "type": "number",
+            "format": "double"
+          },
+          "measured_counts_per_cm": {
+            "type": "number",
+            "format": "double"
+          },
+          "nominal_counts_per_cm": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "What the wheel's stated dimensions imply \u2014 the arithmetic this\nmeasurement exists to correct. On the report rather than left to a\nclient, so a result is readable on its own a month later."
+          }
+        }
+      },
+      "MeasurementStarted": {
+        "type": "object",
+        "description": "A measurement in progress.",
+        "required": [
+          "axis",
+          "known_distance_cm",
+          "counts_at_start",
+          "counts"
+        ],
+        "properties": {
+          "axis": {
+            "type": "string"
+          },
+          "counts": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "counts_at_start": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The counter when counting began, so a UI can show progress without\nasking the daemon to keep a second copy of it."
+          },
+          "known_distance_cm": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "OutputAction": {
+        "type": "string",
+        "description": "How the line behaves while the condition holds.",
+        "enum": [
+          "pulse",
+          "level"
+        ]
+      },
+      "OutputLine": {
+        "type": "object",
+        "required": [
+          "name",
+          "index",
+          "pin"
+        ],
+        "properties": {
+          "index": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The board's own index for this line \u2014 what the wire carries, since the\nprotocol is indices and not names.",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string",
+            "description": "What a zone set calls it."
+          },
+          "pin": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The pin it is wired to, on this board.",
+            "minimum": 0
+          },
+          "safe_high": {
+            "type": "boolean",
+            "description": "The level the firmware drives when nothing else says otherwise. Outputs\nreach this before anything else runs."
+          }
+        },
+        "additionalProperties": false
+      },
+      "RigState": {
+        "type": "object",
+        "required": [
+          "axes",
+          "health",
+          "link"
+        ],
+        "properties": {
+          "axes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AxisState"
+            }
+          },
+          "health": {
+            "$ref": "#/components/schemas/LinkHealth"
+          },
+          "link": {
+            "$ref": "#/components/schemas/LinkState"
+          }
+        }
+      },
+      "Sample": {
+        "type": "object",
+        "required": [
+          "seq",
+          "device_us",
+          "host_monotonic_ns",
+          "lost_before",
+          "axes"
+        ],
+        "properties": {
+          "axes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AxisState"
+            }
+          },
+          "device_us": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The device clock. Correlating it with the host's is the daemon's job.",
+            "minimum": 0
+          },
+          "host_monotonic_ns": {
+            "type": "integer",
+            "format": "int64",
+            "description": "`CLOCK_MONOTONIC` nanoseconds \u2014 the join key with statemachined's trace\nand vstimd's vblank timestamps.",
+            "minimum": 0
+          },
+          "lost_before": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Samples the daemon **never received** since the previous frame on this\nsocket, accumulated across the ones decimation dropped. Only the daemon\ncan tell decimation from loss; a consumer breaks its line on this and on\nnothing else.",
+            "minimum": 0
+          },
+          "seq": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The device's own sample counter. **Not a loss signal for a consumer**:\nthis stream is decimated, so `seq` skips by design. See `lost_before`.",
+            "minimum": 0
+          }
+        }
+      },
+      "StartMeasurement": {
+        "type": "object",
+        "description": "`POST /api/calibration/measure/start`.",
+        "required": [
+          "axis",
+          "known_distance_cm"
+        ],
+        "properties": {
+          "axis": {
+            "type": "string"
+          },
+          "known_distance_cm": {
+            "type": "number",
+            "format": "double",
+            "description": "How far the wheel is about to be rolled, by hand, along its running\nsurface. A metre in one continuous motion: a metre averages away where\nyou started and stopped, and one revolution does not."
+          }
+        },
+        "additionalProperties": false
+      },
+      "StreamFrame": {
+        "oneOf": [
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Sample"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "type"
+                ],
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "sample"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ZoneHitEvent"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "type"
+                ],
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "zone_hit"
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        ],
+        "description": "One frame of `WS /api/stream`."
+      },
+      "ValidationReport": {
+        "type": "object",
+        "description": "`POST /api/zone-sets/{name}/validate` \u2014 compile without uploading.",
+        "required": [
+          "ok",
+          "zone_count",
+          "counts_per_cm",
+          "references"
+        ],
+        "properties": {
+          "counts_per_cm": {
+            "type": "number",
+            "format": "double",
+            "description": "The calibration it was compiled against, so a report is readable a day\nlater without guessing which one was in force."
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "problem": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The first thing wrong, in the words the compiler would use. `None` when\nit compiles."
+          },
+          "references": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The `$name`s this set still needs at arm time."
+          },
+          "zone_count": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "VersionReport": {
+        "type": "object",
+        "required": [
+          "daemon",
+          "api",
+          "device_protocol",
+          "vinput_layout"
+        ],
+        "properties": {
+          "api": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The API contract's major version. Within it, changes are additive:\nfields, routes and enum values may appear; nothing is removed, renamed\nor given a new meaning.",
+            "minimum": 0
+          },
+          "daemon": {
+            "type": "string",
+            "description": "This daemon's release, from the build."
+          },
+          "device_protocol": {
+            "$ref": "#/components/schemas/DeviceProtocol"
+          },
+          "vinput_layout": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The `vinput` segment layout this daemon writes \u2014 the one interface in\nthe family where a mismatch is bytes reinterpreted rather than a field\ngone missing, and therefore the one that is checked rather than\nadvertised. The reader refuses to map a segment whose version is not its\nown; this is here so a person can see why before it happens.",
+            "minimum": 0
+          }
+        }
+      },
+      "WireDirection": {
+        "type": "string",
+        "enum": [
+          "out",
+          "in"
+        ]
+      },
+      "WireLevel": {
+        "type": "string",
+        "enum": [
+          "info",
+          "error"
+        ]
+      },
+      "WireLine": {
+        "type": "object",
+        "description": "One line of the wire, either direction, uninterpreted.",
+        "required": [
+          "host_monotonic_ns",
+          "direction",
+          "text",
+          "level"
+        ],
+        "properties": {
+          "direction": {
+            "$ref": "#/components/schemas/WireDirection"
+          },
+          "host_monotonic_ns": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "level": {
+            "$ref": "#/components/schemas/WireLevel"
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "WireLog": {
+        "type": "object",
+        "required": [
+          "lines"
+        ],
+        "properties": {
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WireLine"
+            }
+          }
+        }
+      },
+      "ZeroRequest": {
+        "type": "object",
+        "description": "`POST /api/position/zero`.\n\nMoves the **API origin** \u2014 what displacement, distance and the zones are\nmeasured from. Never the accumulator published to a camera: vstimd\ndifferences that every frame, and a value that jumps backwards jumps the\ncorridor backwards. Teleporting a corridor is a command to vstimd, from\nwhoever runs the experiment.",
+        "properties": {
+          "axes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Which axes. Empty means all of them."
+          }
+        },
+        "additionalProperties": false
+      },
+      "Zone": {
+        "type": "object",
+        "required": [
+          "name",
+          "shape",
+          "axes",
+          "min_cm",
+          "max_cm",
+          "fire",
+          "output"
+        ],
+        "properties": {
+          "axes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The axes this zone constrains, in the order its bounds are given. One\nfor a wheel; a 2-D rectangle on a ball is already expressible."
+          },
+          "fire": {
+            "$ref": "#/components/schemas/FireRule"
+          },
+          "hysteresis_cm": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "level": {
+            "type": "boolean",
+            "description": "Fire on arming if the animal is already inside. Off by default: a zone\nfires on the false\u2192true **edge** of \"inside\", so arming a zone somebody\nis standing in does not fire it."
+          },
+          "max_cm": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ZoneBound"
+            },
+            "description": "The high end per axis. `null` is open."
+          },
+          "metric": {
+            "$ref": "#/components/schemas/ZoneMetric"
+          },
+          "min_cm": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ZoneBound"
+            },
+            "description": "The low end per axis, in the order of `axes`."
+          },
+          "name": {
+            "type": "string"
+          },
+          "output": {
+            "$ref": "#/components/schemas/ZoneOutput"
+          },
+          "shape": {
+            "$ref": "#/components/schemas/ZoneShape"
+          },
+          "wrap_cm": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "A circular track: the metric is evaluated modulo this period."
+          }
+        },
+        "additionalProperties": false
+      },
+      "ZoneBound": {
+        "oneOf": [
+          {
+            "type": "number",
+            "description": "a distance in centimetres"
+          },
+          {
+            "type": "string",
+            "description": "\"$name\", resolved from the patch given at arm time"
+          },
+          {
+            "type": "null",
+            "description": "an open bound: everything past the other end"
+          }
+        ],
+        "description": "One end of a zone's interval on one axis."
+      },
+      "ZoneHitEvent": {
+        "type": "object",
+        "required": [
+          "zone",
+          "arm_id",
+          "seq",
+          "host_monotonic_ns",
+          "position_cm"
+        ],
+        "properties": {
+          "arm_id": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "host_monotonic_ns": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "position_cm": {
+            "type": "number",
+            "format": "double"
+          },
+          "seq": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "zone": {
+            "type": "string"
+          }
+        }
+      },
+      "ZoneMetric": {
+        "type": "string",
+        "description": "Which quantity a zone is compared against.",
+        "enum": [
+          "displacement",
+          "distance"
+        ]
+      },
+      "ZoneOutput": {
+        "type": "object",
+        "required": [
+          "line",
+          "action"
+        ],
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/OutputAction"
+          },
+          "line": {
+            "type": "string",
+            "description": "A **name** from the rig config's line map, never a pin number."
+          },
+          "ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Pulse width. Ignored by a `level` output.",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "ZoneSet": {
+        "type": "object",
+        "description": "A named set, as it is stored and as it is uploaded.\n\nDeclaration order resolves two zones firing in one scan: both still fire,\nand the order is the order of their `zone_hit` messages.",
+        "required": [
+          "zone_set_version",
+          "zones"
+        ],
+        "properties": {
+          "zone_set_version": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Bumped by whoever edits the set. The board reports the version it holds,\nso \"is the board running what I think it is\" is one comparison.",
+            "minimum": 0
+          },
+          "zones": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Zone"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "ZoneSetNames": {
+        "type": "object",
+        "description": "The names in the store.",
+        "required": [
+          "zone_sets"
+        ],
+        "properties": {
+          "zone_sets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ZoneShape": {
+        "type": "string",
+        "description": "The only shape today, and a discriminator rather than a flag: a future\n`circle` or `polygon` is a new value, and a shape the firmware does not know\nis refused whole rather than half-evaluated.",
+        "enum": [
+          "rect"
+        ]
+      },
+      "ZoneStatus": {
+        "type": "object",
+        "description": "What a zone is doing right now.\n\nThe bounds are **as armed**, in centimetres: the `$name`s resolved from the\ntrial's patch and the counts the board is actually comparing against,\nconverted back. Without them a UI can only draw the set as *stored*, which\nfor a parameterised set is a picture of a zone that is not the one running \u2014\nand \"is the reward region where I think it is\" is the question the picture\nexists to answer.",
+        "required": [
+          "name",
+          "armed",
+          "fired",
+          "inside",
+          "min_cm",
+          "max_cm",
+          "metric"
+        ],
+        "properties": {
+          "armed": {
+            "type": "boolean"
+          },
+          "fired": {
+            "type": "boolean"
+          },
+          "fired_at_cm": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "inside": {
+            "type": "boolean"
+          },
+          "max_cm": {
+            "type": "array",
+            "items": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "double"
+            }
+          },
+          "metric": {
+            "$ref": "#/components/schemas/ZoneMetric"
+          },
+          "min_cm": {
+            "type": "array",
+            "items": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "double"
+            },
+            "description": "Per axis, in the order the zone names them. `null` is an open bound."
+          },
+          "name": {
+            "type": "string"
+          },
+          "wrap_cm": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "The period the metric is taken modulo, if the zone wraps."
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "device",
+      "description": "The board, and the wire to it"
+    },
+    {
+      "name": "state",
+      "description": "Where the wheel is"
+    },
+    {
+      "name": "calibration",
+      "description": "Counts per centimetre, and how it was measured"
+    },
+    {
+      "name": "zones",
+      "description": "Distances at which a line fires"
+    },
+    {
+      "name": "config",
+      "description": "Rates, and the line map"
+    }
+  ]
+}

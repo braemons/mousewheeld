@@ -44,6 +44,7 @@ scan that sees the count, and put on a TTL line.
 | **The console panels** | `web/elements/` — five custom elements, no build step, served by this daemon at its own version |
 | **Publishing to vstimd** | `daemon/src/publish/` — the `vinput` segment, written first of everything a sample causes, in centimetres, through vstimd's own crate pinned at `v0.3.0-alpha1` |
 | **Packaging** | `packaging/` — nfpm, a systemd unit, a udev rule, sysusers |
+| **The API as a file** | [`docs/reference/openapi.json`](docs/reference/openapi.json) — generated from the types and committed, so the interface is something a pull request diffs. `make check` fails when the two disagree |
 | a board on a pty | `--simulate` — a simulator speaking the protocol on the far end of a real pty, so the daemon runs the link code it will run against a Teensy |
 
 **Not built:** the firmware, the real-time thread's scheduling discipline, the
@@ -55,7 +56,7 @@ without one.
 ```sh
 make dev          # a board simulator on a pty; panels at http://127.0.0.1:8082/
 make check        # build, clippy, tests
-make openapi      # dist/openapi.json, generated from the types
+make openapi      # regenerate docs/reference/openapi.json from the types
 make package      # deb and rpm
 ```
 
@@ -84,6 +85,24 @@ before you apply it.
 The calibration lives here and nowhere else. Everything this daemon publishes is
 in **centimetres**, so vstimd's `[[input.device.axis]]` keeps `scale = 1.0` and
 restates nothing.
+
+## Versions
+
+`GET /api/version` reports three numbers that are not the same number: the
+daemon's release, the **API contract's** major version, and the **device
+protocol** — what this daemon sends, the oldest it will talk to, and what the
+attached board greeted with. It also reports the `vinput` layout version, which
+is the one interface here that is *checked* rather than advertised.
+
+That split is the family's rule (`contracts/INTERACTIONS.md` §11): a version is
+advertised between daemons and never gated on, because a gate turns every
+upgrade into a coordinated one; it is checked on a shared-memory layout, where a
+mismatch is bytes reinterpreted; and a device wire keeps a **floor** rather than
+an equality, because firmware is flashed separately and will be older.
+
+Requests refuse unknown fields and responses ignore them — a command that does
+part of what was asked is worse than one that does none, and a consumer that
+cannot survive a newer producer makes every upgrade a flag day.
 
 ## Security
 

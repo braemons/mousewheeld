@@ -59,6 +59,7 @@ where
 
 pub fn router(daemon: Arc<Daemon>) -> Router {
     Router::new()
+        .route("/api/version", get(device_routes::read_version))
         .route("/api/device", get(device_routes::read_device))
         .route("/api/device/connect", post(device_routes::connect))
         .route("/api/device/firmware", get(device_routes::read_firmware))

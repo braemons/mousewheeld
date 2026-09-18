@@ -23,6 +23,7 @@ use crate::model::device::{
 };
 use crate::model::error::ApiErrorBody;
 use crate::model::line_map::{LineMap, OutputLine};
+use crate::model::version::{DeviceProtocol, VersionReport};
 use crate::model::state::{
     AxisState, LinkHealth, LinkState, RigState, Sample, StreamFrame, ZeroRequest, ZoneHitEvent,
 };
@@ -43,6 +44,7 @@ use crate::model::zone_set::{
         license(name = "AGPL-3.0-or-later"),
     ),
     paths(
+        super::device_routes::read_version,
         super::device_routes::read_device,
         super::device_routes::connect,
         super::device_routes::read_firmware,
@@ -76,6 +78,7 @@ use crate::model::zone_set::{
         Capacities, DeviceInfo, FirmwareVersions, FlashedZoneSet, LinkStats,
         WireDirection, WireLevel, WireLine, WireLog,
         LineMap, OutputLine,
+        DeviceProtocol, VersionReport,
         AxisState, LinkHealth, LinkState, RigState, Sample, StreamFrame, ZeroRequest, ZoneHitEvent,
         ArmOrigin, ArmRequest, ArmedZones, FireRule, OutputAction, ValidationReport, Zone,
         ZoneBound, ZoneMetric, ZoneOutput, ZoneSet, ZoneSetNames, ZoneShape, ZoneStatus,

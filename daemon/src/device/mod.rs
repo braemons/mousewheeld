@@ -69,7 +69,19 @@ const ARM_ACK_TIMEOUT: Duration = Duration::from_millis(750);
 /// samples: a wheel publishes whole counts, so a slope across one 2 ms step is
 /// mostly quantisation.
 const VELOCITY_SPAN_NS: u64 = 250_000_000;
+/// What this daemon sends in `hello`, and the range it will talk to.
+///
+/// **A floor, not an equality.** Firmware is flashed separately and will be
+/// older than the daemon that talks to it; refusing anything but an exact match
+/// would make every daemon release a reflash. Below the floor is refused by
+/// name instead of half-understood, because a protocol this daemon only mostly
+/// speaks is a zone armed at a distance nobody chose.
 const PROTOCOL_VERSION: u32 = 1;
+const OLDEST_PROTOCOL_SPOKEN: u32 = 1;
+/// The rule this arrangement exists for, as a compile error rather than a test:
+/// firmware is flashed separately and will be older than the daemon, so a floor
+/// above what this daemon speaks would make every release a reflash.
+const _: () = assert!(OLDEST_PROTOCOL_SPOKEN <= PROTOCOL_VERSION);
 
 /// One axis as the rig config describes it.
 #[derive(Clone)]
@@ -355,6 +367,21 @@ impl Device {
 
         match message {
             FromDevice::HelloAck(ack) => {
+                if !speaks_protocol(ack.protocol_version) {
+                    // Said once, plainly, and then nothing else is done with
+                    // this board: no stream, no line map, no zones. A daemon
+                    // that carried on here would be guessing.
+                    self.note_error(&format!(
+                        "the board speaks protocol {} and this daemon needs at least {} —                          reflash the board, or run the daemon that matches it",
+                        ack.protocol_version, OLDEST_PROTOCOL_SPOKEN
+                    ));
+                    let mut inner = self.inner.lock().unwrap();
+                    inner.connected = false;
+                    inner.board = ack.board;
+                    inner.firmware = ack.firmware;
+                    inner.protocol_version = ack.protocol_version;
+                    return;
+                }
                 {
                     let mut inner = self.inner.lock().unwrap();
                     // A greeting nobody asked for is a board that came back:
@@ -636,6 +663,16 @@ impl Device {
         self.inner.lock().unwrap().capacities.clone()
     }
 
+    /// What this daemon speaks, and what the attached board speaks.
+    pub fn protocol(&self) -> (u32, u32, Option<u32>) {
+        let board = self.inner.lock().unwrap().protocol_version;
+        (
+            PROTOCOL_VERSION,
+            OLDEST_PROTOCOL_SPOKEN,
+            (board > 0).then_some(board),
+        )
+    }
+
     pub fn log_wire(&self, direction: WireDirection, text: impl Into<String>, level: WireLevel) {
         let text = text.into();
         let is_sample = text.contains(r#""msg_type":"sample""#);
@@ -904,6 +941,15 @@ impl Drop for Device {
     }
 }
 
+/// Whether this daemon will talk to a board that greeted with `board`.
+///
+/// A floor and no ceiling. Newer firmware is fine — the protocol gains fields
+/// additively and a reader ignores what it does not know — and older firmware
+/// than the floor is refused by name rather than half-understood.
+fn speaks_protocol(board: u32) -> bool {
+    board >= OLDEST_PROTOCOL_SPOKEN
+}
+
 /// A compiled zone, as the wire carries it: indices and counts, nothing else.
 fn wire_zone(index: usize, zone: &CompiledZone) -> WireZone {
     WireZone {
@@ -947,4 +993,20 @@ pub fn monotonic_ns() -> u64 {
     // SAFETY: as above.
     unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut spec) };
     spec.tv_sec as u64 * 1_000_000_000 + spec.tv_nsec as u64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_board_older_than_the_floor_is_refused_and_a_newer_one_is_not() {
+        assert!(!speaks_protocol(0), "a board that greeted with nothing");
+        assert!(speaks_protocol(OLDEST_PROTOCOL_SPOKEN));
+        assert!(
+            speaks_protocol(PROTOCOL_VERSION + 5),
+            "newer firmware is fine: the protocol grows additively and a reader \
+             ignores what it does not know"
+        );
+    }
 }
