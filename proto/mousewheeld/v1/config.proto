@@ -1,0 +1,97 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+syntax = "proto3";
+
+package mousewheeld.v1;
+
+import "braemons/v1/route.proto";
+import "google/protobuf/empty.proto";
+
+// Rates, and the line map.
+//
+// **Two kinds of setting, and the split is deliberate.** The wiring — which
+// pin is `zone_goal`, which port the board is on — is changed where wiring is
+// described, in the rig config file, and is not writable over this API. The
+// rates are changed per session, by a person at a console, and are.
+service Config {
+  // The settings a session may change and the ones it may only read, in one
+  // answer.
+  rpc ReadConfig(google.protobuf.Empty) returns (ConfigView) {
+    option (braemons.v1.route) = { method: "GET", path: "/api/config" };
+  }
+
+  // Change the rates. Absent fields are left alone.
+  rpc PatchConfig(ConfigPatch) returns (ConfigView) {
+    option (braemons.v1.route) = { method: "PATCH", path: "/api/config", body: "*" };
+  }
+
+  // The output lines, by name.
+  //
+  // Read-only over the API: a zone set says `"line": "zone_goal"`, and the pin
+  // behind that name belongs to the rig's config. This is the same split
+  // statemachined draws between its graphs and its line map.
+  rpc ReadLines(google.protobuf.Empty) returns (LineMap) {
+    option (braemons.v1.route) = { method: "GET", path: "/api/lines" };
+  }
+}
+
+message ConfigView {
+  // What the device is asked to send. Cumulative counts, so a lower rate costs
+  // resolution and never distance.
+  uint32 rate_hz = 1 [json_name = "rate_hz"];
+
+  // The refresh rate of the display this wheel drives, when it drives one.
+  // Zero means no display follows this wheel.
+  uint32 display_hz = 2 [json_name = "display_hz"];
+
+  // How long the in-memory path stays queryable.
+  uint32 ring_minutes = 3 [json_name = "ring_minutes"];
+
+  // The vinput segment name. vstimd's rig config names the same string and
+  // never learns who writes it.
+  string shm_name = 4 [json_name = "shm_name"];
+
+  // Whether that segment is actually open. A name in a config file and a
+  // mapped segment are different things, and the difference is the whole
+  // reason a corridor sometimes does not move.
+  bool shm_open = 5 [json_name = "shm_open"];
+
+  // Writes that have reached it since it was created.
+  uint64 shm_writes = 6 [json_name = "shm_writes"];
+
+  // The ZMQ PUB port, after vstimd's 5555 REP and 5556 events.
+  uint32 event_port = 7 [json_name = "event_port"];
+
+  // Read-only here: wiring is changed where wiring is described.
+  string port = 8;
+
+  // True when `rate_hz` is at or below `display_hz`. Below the display rate
+  // some frames see no new sample and the next sees two, and the corridor
+  // moves in uneven steps at exactly the speeds a running animal produces.
+  bool starves_the_display = 9 [json_name = "starves_the_display"];
+}
+
+message ConfigPatch {
+  optional uint32 rate_hz = 1 [json_name = "rate_hz"];
+  optional uint32 display_hz = 2 [json_name = "display_hz"];
+  optional uint32 ring_minutes = 3 [json_name = "ring_minutes"];
+}
+
+message LineMap {
+  repeated OutputLine lines = 1;
+}
+
+message OutputLine {
+  // What a zone set calls it.
+  string name = 1;
+
+  // The board's own index for this line — what the wire carries, since the
+  // device protocol is indices and not names.
+  uint32 index = 2;
+
+  // The pin it is wired to, on this board.
+  uint32 pin = 3;
+
+  // The level the firmware drives when nothing else says otherwise. Outputs
+  // reach this before anything else runs.
+  bool safe_high = 4 [json_name = "safe_high"];
+}

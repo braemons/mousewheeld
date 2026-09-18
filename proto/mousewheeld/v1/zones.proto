@@ -1,0 +1,225 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+syntax = "proto3";
+
+package mousewheeld.v1;
+
+import "braemons/v1/route.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/struct.proto";
+import "mousewheeld/v1/device.proto";
+
+// Distances at which a line fires.
+//
+// **Zones are dynamic; the lines they drive are not.** A zone set names
+// `"line": "zone_goal"` and never a pin, so one set runs on every rig that has
+// a `zone_goal` line and a rewired rig edits one file.
+//
+// **Authored in centimetres, compiled to counts.** The firmware has no
+// floating point on any path whose result crosses the wire, so the host turns
+// every centimetre into an integer interval before the board sees it — against
+// a named calibration, which is why changing the calibration marks compiled
+// sets stale.
+service Zones {
+  // The names in the store.
+  rpc ListZoneSets(google.protobuf.Empty) returns (ZoneSetNames) {
+    option (braemons.v1.route) = { method: "GET", path: "/api/zone-sets" };
+  }
+
+  // One stored set, exactly as it is on disk.
+  rpc ReadZoneSet(ZoneSetName) returns (ZoneSetDocument) {
+    option (braemons.v1.route) = { method: "GET", path: "/api/zone-sets/{name}" };
+  }
+
+  // Store a set. Refused if it does not parse or does not compile.
+  rpc ReplaceZoneSet(WriteZoneSet) returns (ZoneSetDocument) {
+    option (braemons.v1.route) = {
+      method: "PUT",
+      path: "/api/zone-sets/{name}",
+      body: "zone_set"
+    };
+  }
+
+  // Compile a **draft** — what somebody is typing, before it is saved.
+  //
+  // The body goes through the daemon's own deserializer and compiler, so what
+  // comes back is the refusal the real thing would give. There is no second,
+  // looser description of a zone set in a browser to disagree with it.
+  rpc ValidateDraft(ZoneSetDocument) returns (ValidationReport) {
+    option (braemons.v1.route) = {
+      method: "POST",
+      path: "/api/zone-sets/validate",
+      body: "*"
+    };
+  }
+
+  // Compile the set as it is **stored** — "is that one still good after the
+  // calibration changed".
+  rpc ValidateZoneSet(ZoneSetName) returns (ValidationReport) {
+    option (braemons.v1.route) = { method: "POST", path: "/api/zone-sets/{name}/validate" };
+  }
+
+  // The zone set document's JSON Schema, for an editor or a checker.
+  //
+  // Committed in this repository as well, at `docs/reference/zone-set.schema.json`,
+  // because a zone set is a *file*: an editor and CI must reach its schema
+  // without a daemon running.
+  rpc ReadZoneSetSchema(google.protobuf.Empty) returns (google.protobuf.Struct) {
+    option (braemons.v1.route) = { method: "GET", path: "/api/zone-sets/schema" };
+  }
+
+  // What is armed, what fired, and where.
+  rpc ReadArmed(google.protobuf.Empty) returns (ArmedZones) {
+    option (braemons.v1.route) = { method: "GET", path: "/api/zones" };
+  }
+
+  // Resolve the patch, compile against the calibration in force, upload, and
+  // wait for the board to answer `armed`.
+  //
+  // Refuses when the set does not fit, naming what overflowed; refuses a
+  // `$name` the patch does not carry, naming the name. Never a default — a
+  // goal distance that silently became zero is a trial that looks like it ran.
+  rpc Arm(ArmRequest) returns (ArmedZones) {
+    option (braemons.v1.route) = { method: "POST", path: "/api/zones/arm", body: "*" };
+  }
+
+  rpc Disarm(google.protobuf.Empty) returns (ArmedZones) {
+    option (braemons.v1.route) = { method: "POST", path: "/api/zones/disarm" };
+  }
+
+  // Write what is armed to the board's flash, so a standalone rig comes up
+  // with its zones. Refuses `nothing_armed`.
+  rpc SaveToFlash(google.protobuf.Empty) returns (DeviceInfo) {
+    option (braemons.v1.route) = { method: "POST", path: "/api/zones/save" };
+  }
+}
+
+message ZoneSetNames {
+  repeated string zone_sets = 1 [json_name = "zone_sets"];
+}
+
+// A set's name in the store. A path parameter, never a body.
+message ZoneSetName {
+  string name = 1;
+}
+
+message WriteZoneSet {
+  string name = 1;
+  ZoneSetDocument zone_set = 2 [json_name = "zone_set"];
+}
+
+// **A zone set is a file, and files travel as themselves.**
+//
+// Everything else in this interface is a message: a shape this daemon chose,
+// which no human types and which may therefore wear protobuf's JSON habits.
+// A zone set is the opposite. Somebody writes it in an editor, reviews it in a
+// diff, and copies it between rigs, and its shape has two things protobuf
+// cannot render without changing what a person types:
+//
+//   - a bound is a number, `null`, or `"$goal_cm"` — three types in one
+//     position, which in protobuf is a `oneof` and on the wire becomes
+//     `{"reference": "goal_cm"}`;
+//   - `"metric": "displacement"` is lowercase because a person wrote it, and a
+//     protobuf enum would spell it `ZONE_METRIC_DISPLACEMENT`.
+//
+// A file that could not be pasted into the editing panel, or a panel whose
+// JSON could not be saved as a file, would be the cost of describing it here.
+// So the document is carried as itself, and its schema — the real one, that
+// the daemon's own deserializer produces — is `ReadZoneSetSchema` above and
+// `docs/reference/zone-set.schema.json` in this repository.
+//
+// This is `contracts/DAEMON_LAYOUT.md` §2, *what proto does not touch*: the
+// file wins, because a person types it.
+message ZoneSetDocument {
+  google.protobuf.Struct document = 1;
+}
+
+message ArmRequest {
+  // A name from the store. Never a slot: the daemon holds the sets, and a name
+  // it does not have is a configuration error the caller can report.
+  string zone_set = 1 [json_name = "zone_set"];
+
+  // Per-trial values for this set's `$name` bounds.
+  map<string, double> patch = 2;
+
+  ArmOrigin origin = 3;
+
+  // Opaque text stored with the arm — triald writes `trial 42`. The daemon
+  // stays trial-blind and hands it back unread.
+  optional string label = 4;
+}
+
+// Where the metric is measured from.
+enum ArmOrigin {
+  // Omitted. Treated as `CURRENT`, which is what a trial wants and what every
+  // caller that does not think about it should get.
+  ARM_ORIGIN_UNSPECIFIED = 0;
+  // Displacement and distance are zero at the arm point.
+  ARM_ORIGIN_CURRENT = 1;
+  // Keep the device origin.
+  ARM_ORIGIN_ABSOLUTE = 2;
+}
+
+message ArmedZones {
+  optional string zone_set = 1 [json_name = "zone_set"];
+  optional uint32 zone_set_version = 2 [json_name = "zone_set_version"];
+  optional uint32 arm_id = 3 [json_name = "arm_id"];
+  optional string label = 4;
+  repeated ZoneStatus zones = 5;
+}
+
+// What a zone is doing right now.
+//
+// The bounds are **as armed**, in centimetres: the `$name`s resolved from the
+// trial's patch and the counts the board is actually comparing against,
+// converted back. Without them a UI can only draw the set as *stored*, which
+// for a parameterised set is a picture of a zone that is not the one running —
+// and "is the reward region where I think it is" is the question the picture
+// exists to answer.
+message ZoneStatus {
+  string name = 1;
+  bool armed = 2;
+  bool fired = 3;
+  bool inside = 4;
+  optional double fired_at_cm = 5 [json_name = "fired_at_cm"];
+
+  // Per axis, in the order the zone names them. An absent value is an open
+  // bound — everything past the other end.
+  repeated OpenOrValue min_cm = 6 [json_name = "min_cm"];
+  repeated OpenOrValue max_cm = 7 [json_name = "max_cm"];
+
+  // The period the metric is taken modulo, if the zone wraps.
+  optional double wrap_cm = 8 [json_name = "wrap_cm"];
+
+  // `displacement` or `distance`, spelled as the zone set file spells it.
+  //
+  // A string and not an enum on purpose: the same value is written by hand in
+  // a zone set, and a person who reads `"metric": "displacement"` in the file
+  // must not find `ZONE_METRIC_DISPLACEMENT` in the panel describing it.
+  string metric = 9;
+}
+
+// A bound that may be open.
+//
+// protobuf has no nullable double inside a repeated field, and a repeated
+// `optional double` is not a thing, so the absence has to be carried by a
+// message. `{"value": 30}` or `{}`.
+message OpenOrValue {
+  optional double value = 1;
+}
+
+message ValidationReport {
+  bool ok = 1;
+
+  // The first thing wrong, in the words the compiler would use. Absent when it
+  // compiles.
+  optional string problem = 2;
+
+  uint32 zone_count = 3 [json_name = "zone_count"];
+
+  // The calibration it was compiled against, so a report is readable a day
+  // later without guessing which one was in force.
+  double counts_per_cm = 4 [json_name = "counts_per_cm"];
+
+  // The `$name`s this set still needs at arm time.
+  repeated string references = 5;
+}

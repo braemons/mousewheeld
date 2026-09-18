@@ -1,0 +1,28 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+syntax = "proto3";
+
+package mousewheeld.v1;
+
+// One refusal shape, for every route.
+//
+// A machine-readable code, a sentence, and the thing to change. The third
+// field is the one that earns its keep: a zone set that does not fit names
+// what overflowed, and a UI that can only render "409" throws exactly that
+// away. Both clients read all three.
+//
+// The HTTP status carries the category — 404 no such thing, 422 understood and
+// refused, 409 not in a state where this means anything, 503 no board, 501
+// designed and not built — and `error` names the particular case within it.
+message Error {
+  // Stable and machine-readable: `no_such_zone_set`, `no_device`.
+  // Additive within an API major version: new codes appear, none change
+  // meaning.
+  string error = 1;
+
+  // One sentence, for a person.
+  string detail = 2;
+
+  // What to change: a zone set's name, the field that did not fit. May be
+  // empty when the sentence is the whole story.
+  string context = 3;
+}

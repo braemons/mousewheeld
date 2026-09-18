@@ -1,0 +1,182 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+syntax = "proto3";
+
+package mousewheeld.v1;
+
+import "braemons/v1/route.proto";
+import "google/protobuf/empty.proto";
+
+// Counts per centimetre, and how it was measured.
+//
+// **This daemon owns the calibration.** The firmware knows counts and nothing
+// else; vstimd is told centimetres and restates nothing; triald needs
+// centimetres too and cannot read either one's config. One copy, here, and
+// every number that leaves is in centimetres.
+service Calibration {
+  rpc ReadCalibration(google.protobuf.Empty) returns (CalibrationState) {
+    option (braemons.v1.route) = { method: "GET", path: "/api/calibration" };
+  }
+
+  // Change one or more axes. Absent fields are left alone, so a panel may send
+  // a single number. An axis name the rig does not have is a 404, never a new
+  // axis.
+  rpc ReplaceCalibration(CalibrationPatch) returns (CalibrationState) {
+    option (braemons.v1.route) = {
+      method: "PUT",
+      path: "/api/calibration",
+      body: "*"
+    };
+  }
+
+  // The 2-D ball. Answers 501 until the hardware exists — declared so that
+  // adding it is filling in rather than redesigning.
+  rpc ReadBall(google.protobuf.Empty) returns (BallCalibration) {
+    option (braemons.v1.route) = { method: "GET", path: "/api/calibration/ball" };
+  }
+
+  rpc ReplaceBall(BallCalibration) returns (BallCalibration) {
+    option (braemons.v1.route) = {
+      method: "PUT",
+      path: "/api/calibration/ball",
+      body: "*"
+    };
+  }
+
+  // Begin counting for a guided measurement.
+  //
+  // **The measurement is the point.** `counts_per_rev / (π · diameter_cm)`
+  // describes a wheel the animal does not run on: what a corridor position is
+  // made of is how far the feet travelled, on the surface they touch, with
+  // whatever tread is on it — a few percent off the nominal every time.
+  rpc StartMeasuring(StartMeasurement) returns (MeasurementStarted) {
+    option (braemons.v1.route) = {
+      method: "POST",
+      path: "/api/calibration/measure/start",
+      body: "*"
+    };
+  }
+
+  // Stop counting and report what the wheel said, beside what the config says.
+  // Nothing is changed by this call.
+  rpc FinishMeasuring(google.protobuf.Empty) returns (MeasurementResult) {
+    option (braemons.v1.route) = { method: "POST", path: "/api/calibration/measure/finish" };
+  }
+
+  // Apply the last measurement.
+  //
+  // A separate, deliberate press, because a calibration change invalidates
+  // every compiled zone set: a set armed under one calibration is never
+  // silently reinterpreted under another.
+  rpc ApplyMeasurement(google.protobuf.Empty) returns (MeasurementApplied) {
+    option (braemons.v1.route) = { method: "POST", path: "/api/calibration/measure/apply" };
+  }
+}
+
+// Named `CalibrationState` and not `Calibration`: the service already holds
+// that name, and a message and a service sharing one is legal in protobuf and
+// confusing in every language it generates.
+message CalibrationState {
+  repeated AxisCalibration axes = 1;
+
+  // The ball's transform. Always absent today.
+  optional BallCalibration ball = 2;
+}
+
+message AxisCalibration {
+  // The axis this describes, matching the axis names everywhere else.
+  string name = 1;
+
+  // Counts per centimetre of travel at the running surface. The number that
+  // converts the device's only unit into everybody else's.
+  double counts_per_cm = 2 [json_name = "counts_per_cm"];
+
+  // Encoder counts per revolution, after quadrature ×4. Kept for the
+  // arithmetic a measurement is checked against — a whole-number ratio between
+  // the two is a decoder counting ×1 or ×2, not a wheel of the wrong size.
+  optional uint32 counts_per_rev = 3 [json_name = "counts_per_rev"];
+
+  // The wheel's diameter — a full extent, never a radius. Porting from a
+  // package that specifies radii means doubling at the boundary.
+  optional double diameter_cm = 4 [json_name = "diameter_cm"];
+
+  // Count the other way. Applied by the device to its own accumulator, so
+  // everything downstream reads a wheel that turns forwards. A sign applied in
+  // two places is a sign applied in neither.
+  bool invert = 5;
+
+  // When `counts_per_cm` was last measured rather than computed. Absent is not
+  // a missing field: it means nobody has ever rolled this wheel against a
+  // tape, and the panels say so.
+  optional string measured_at = 6 [json_name = "measured_at"];
+}
+
+// Declared, refused, and here so the shape of the answer is not a surprise.
+message BallCalibration {
+  double diameter_cm = 1 [json_name = "diameter_cm"];
+  // Where each sensor sits, in degrees around the ball.
+  repeated double sensor_angles_deg = 2 [json_name = "sensor_angles_deg"];
+}
+
+message CalibrationPatch {
+  repeated AxisCalibrationPatch axes = 1;
+}
+
+// Everything optional but the name, so a panel can send one field.
+message AxisCalibrationPatch {
+  string name = 1;
+  optional double counts_per_cm = 2 [json_name = "counts_per_cm"];
+  optional uint32 counts_per_rev = 3 [json_name = "counts_per_rev"];
+  optional double diameter_cm = 4 [json_name = "diameter_cm"];
+  optional bool invert = 5;
+}
+
+message StartMeasurement {
+  string axis = 1;
+
+  // How far the wheel is about to be rolled, by hand, along its running
+  // surface, in the direction the animal runs. A metre in one continuous
+  // motion: a metre averages away where you started and stopped, and one
+  // revolution does not.
+  double known_distance_cm = 2 [json_name = "known_distance_cm"];
+}
+
+message MeasurementStarted {
+  string axis = 1;
+  double known_distance_cm = 2 [json_name = "known_distance_cm"];
+
+  // The counter when counting began, so a UI can show progress without asking
+  // the daemon to keep a second copy of it.
+  int64 counts_at_start = 3 [json_name = "counts_at_start"];
+  int64 counts = 4;
+}
+
+message MeasurementResult {
+  string axis = 1;
+  double known_distance_cm = 2 [json_name = "known_distance_cm"];
+  int64 counts = 3;
+  double measured_counts_per_cm = 4 [json_name = "measured_counts_per_cm"];
+  double configured_counts_per_cm = 5 [json_name = "configured_counts_per_cm"];
+  optional uint32 counts_per_rev = 6 [json_name = "counts_per_rev"];
+
+  // What the wheel's stated dimensions imply — the arithmetic this measurement
+  // exists to correct. On the report rather than left to a client, so a result
+  // is readable on its own a month later.
+  optional double nominal_counts_per_cm = 7 [json_name = "nominal_counts_per_cm"];
+
+  // The circumference the measurement implies, when the counts per revolution
+  // are known — the number to hold against the wheel with a tape.
+  optional double implied_circumference_cm = 8 [json_name = "implied_circumference_cm"];
+
+  // Set when the measurement is a whole-number multiple of the configured
+  // value: a decoding mistake rather than a wheel, and worth saying in words
+  // before somebody applies it.
+  optional string decoding_suspect = 9 [json_name = "decoding_suspect"];
+}
+
+message MeasurementApplied {
+  string axis = 1;
+  double counts_per_cm = 2 [json_name = "counts_per_cm"];
+
+  // Compiled zone sets are stale now, and the next arm recompiles.
+  bool zone_sets_invalidated = 3 [json_name = "zone_sets_invalidated"];
+}

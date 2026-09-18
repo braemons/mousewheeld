@@ -1,0 +1,46 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+syntax = "proto3";
+
+package mousewheeld.v1;
+
+// What this daemon is, and what it speaks.
+//
+// A console shows three daemons' panels beside each other and needs to know
+// what it is showing; a client that wants a field added last month needs to
+// know whether it is there. Both are answered by **advertising** a version,
+// never by gating on one — a version check between daemons turns every upgrade
+// into a coordinated one, on a rig whose whole arrangement is that each daemon
+// runs alone (`contracts/INTERACTIONS.md` §11).
+message VersionReport {
+  // This daemon's release, from the build.
+  string daemon = 1;
+
+  // The API contract's major version. Within it, changes are additive: fields,
+  // routes and enum values may appear; nothing is removed, renamed or given a
+  // new meaning. Deliberately slower-moving than the release.
+  uint32 api = 2;
+
+  DeviceProtocol device_protocol = 3 [json_name = "device_protocol"];
+
+  // The `vinput` segment layout this daemon writes — the one interface in the
+  // family where a mismatch is bytes reinterpreted rather than a field gone
+  // missing, and therefore the one that is checked rather than advertised. The
+  // reader refuses to map a segment whose version is not its own; this is here
+  // so a person can see why before it happens.
+  uint32 vinput_layout = 4 [json_name = "vinput_layout"];
+}
+
+// The wire to the board: what this daemon sends, the oldest it will talk to,
+// and what the attached board actually said.
+message DeviceProtocol {
+  // What this daemon sends in `hello`.
+  uint32 speaks = 1;
+
+  // The oldest it will talk to. Below this a board is refused by name rather
+  // than half-understood.
+  uint32 floor = 2;
+
+  // What the attached board greeted with, if one has. Absent, not zero, when
+  // nothing has connected — zero is a protocol version somebody could ship.
+  optional uint32 board = 3;
+}

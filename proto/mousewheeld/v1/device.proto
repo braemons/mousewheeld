@@ -1,0 +1,148 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+syntax = "proto3";
+
+package mousewheeld.v1;
+
+import "braemons/v1/route.proto";
+import "google/protobuf/empty.proto";
+import "mousewheeld/v1/version.proto";
+
+// The board, and the wire to it.
+//
+// The first question anybody asks this daemon is whether a board is attached,
+// and the second is which firmware is on it.
+service Device {
+  // What this daemon is and what it speaks. Answers without a board.
+  rpc ReadVersion(google.protobuf.Empty) returns (VersionReport) {
+    option (braemons.v1.route) = { method: "GET", path: "/api/version" };
+  }
+
+  // Whether a board is attached, which one, and how the link is holding up.
+  rpc ReadDevice(google.protobuf.Empty) returns (DeviceInfo) {
+    option (braemons.v1.route) = { method: "GET", path: "/api/device" };
+  }
+
+  // Open the serial port named in the rig config and greet the board.
+  //
+  // Idempotent: connecting a connected daemon answers with what is already
+  // there. Refuses `no_device` when the port is not openable, and refuses a
+  // board whose protocol is below the floor **by name**, rather than speaking
+  // to it half-understood.
+  rpc Connect(google.protobuf.Empty) returns (DeviceInfo) {
+    option (braemons.v1.route) = { method: "POST", path: "/api/device/connect" };
+  }
+
+  // What the board is running, and what this daemon could flash onto it.
+  rpc ReadFirmware(google.protobuf.Empty) returns (FirmwareVersions) {
+    option (braemons.v1.route) = { method: "GET", path: "/api/device/firmware" };
+  }
+
+  // The recent wire, both directions, uninterpreted.
+  //
+  // A bounded ring. The conversation and the sample traffic are kept apart —
+  // at 500 Hz a shared ring evicts the `hello` handshake within seconds, which
+  // is exactly the part somebody reads a wire log to see.
+  rpc ReadWireLog(google.protobuf.Empty) returns (WireLog) {
+    option (braemons.v1.route) = { method: "GET", path: "/api/device/monitor" };
+  }
+
+  // The same wire as it happens.
+  rpc WatchWire(google.protobuf.Empty) returns (stream WireLine) {
+    option (braemons.v1.route) = {
+      method: "GET",
+      path: "/api/device/monitor/stream",
+      websocket: true
+    };
+  }
+}
+
+message DeviceInfo {
+  bool connected = 1;
+
+  // The serial port this daemon owns, from the rig config.
+  string port = 2;
+
+  // `teensy41`, `esp32`, or `simulated`.
+  string board = 3;
+
+  string firmware_version = 4 [json_name = "firmware_version"];
+
+  // The wire protocol version the board greeted with.
+  uint32 protocol_version = 5 [json_name = "protocol_version"];
+
+  // The board's clock since it booted — a reset shows up here before it shows
+  // up anywhere else. Microseconds, and a string in JSON, as every 64-bit
+  // integer in this API is.
+  uint64 uptime_device_us = 6 [json_name = "uptime_device_us"];
+
+  Capacities capacities = 7;
+
+  // The set written to the board's flash, if any: a standalone rig comes up
+  // with its zones, and the board reports which copy it holds.
+  optional FlashedZoneSet flashed_zone_set = 8 [json_name = "flashed_zone_set"];
+
+  LinkStats link = 9;
+}
+
+// Compile-time limits, reported by the board at `hello`.
+//
+// Here because a zone set that does not fit must be refused at upload naming
+// what overflowed, not discovered on a rig at three in the morning.
+message Capacities {
+  // Narrower than a uint32 in the firmware; protobuf has no smaller integer,
+  // and inventing one would put a second bound in a second place.
+  uint32 n_axes = 1 [json_name = "n_axes"];
+  uint32 max_zones = 2 [json_name = "max_zones"];
+  uint32 max_lines = 3 [json_name = "max_lines"];
+
+  // The scan the firmware runs its counters and zones at.
+  uint32 scan_hz = 4 [json_name = "scan_hz"];
+}
+
+message FlashedZoneSet {
+  string name = 1;
+  uint32 version = 2;
+}
+
+message LinkStats {
+  // How many times this daemon has (re)connected to a board. A number that
+  // climbs on its own is a cable.
+  uint64 connection_count = 1 [json_name = "connection_count"];
+
+  // The last thing the board refused, kept because it is usually the answer.
+  optional string last_error = 2 [json_name = "last_error"];
+}
+
+// One line of the wire, either direction, uninterpreted.
+message WireLine {
+  uint64 host_monotonic_ns = 1 [json_name = "host_monotonic_ns"];
+  WireDirection direction = 2;
+  string text = 3;
+  WireLevel level = 4;
+}
+
+message WireLog {
+  repeated WireLine lines = 1;
+}
+
+enum WireDirection {
+  WIRE_DIRECTION_UNSPECIFIED = 0;
+  // daemon → board
+  WIRE_DIRECTION_OUT = 1;
+  // board → daemon
+  WIRE_DIRECTION_IN = 2;
+}
+
+enum WireLevel {
+  WIRE_LEVEL_UNSPECIFIED = 0;
+  WIRE_LEVEL_INFO = 1;
+  // A line the board refused, or one that failed its CRC.
+  WIRE_LEVEL_ERROR = 2;
+}
+
+message FirmwareVersions {
+  // What the attached board is running.
+  string running = 1;
+  // What this daemon ships and could flash. Empty until the firmware exists.
+  repeated string available = 2;
+}

@@ -1,0 +1,150 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+syntax = "proto3";
+
+package mousewheeld.v1;
+
+import "braemons/v1/route.proto";
+import "google/protobuf/empty.proto";
+
+// Where the wheel is.
+service StateService {
+  // Everything true right now, per axis, with the link health that says
+  // whether to believe it.
+  rpc ReadState(google.protobuf.Empty) returns (RigState) {
+    option (braemons.v1.route) = { method: "GET", path: "/api/state" };
+  }
+
+  // The decimated path, as it happens.
+  //
+  // `rate_hz` is a query parameter and is what the browser asks for, **not**
+  // what the device samples at: the daemon decimates and says what it lost.
+  // A consumer breaks its line on `lost_before` and on nothing else.
+  rpc WatchState(WatchStateRequest) returns (stream StreamFrame) {
+    option (braemons.v1.route) = {
+      method: "GET",
+      path: "/api/stream",
+      websocket: true
+    };
+  }
+
+  // Move the **API origin** — what displacement, distance and the zones are
+  // measured from.
+  //
+  // Never the accumulator published to a camera: vstimd differences that every
+  // frame, and a value that jumps backwards jumps the corridor backwards.
+  // Teleporting a corridor is a command to vstimd, from whoever runs the
+  // experiment.
+  rpc ZeroPosition(ZeroRequest) returns (RigState) {
+    option (braemons.v1.route) = {
+      method: "POST",
+      path: "/api/position/zero",
+      body: "*"
+    };
+  }
+}
+
+message WatchStateRequest {
+  // Frames per second to push. Query parameter, not a body.
+  uint32 rate_hz = 1 [json_name = "rate_hz"];
+}
+
+message ZeroRequest {
+  // Which axes. Empty means all of them.
+  repeated string axes = 1;
+}
+
+message RigState {
+  repeated AxisState axes = 1;
+  LinkHealth health = 2;
+  LinkState link = 3;
+}
+
+message LinkState {
+  bool connected = 1;
+}
+
+// Two quantities per axis, and they are not the same question.
+message AxisState {
+  string name = 1;
+
+  // The device's 64-bit accumulator. The only unit the firmware knows.
+  int64 counts = 2;
+
+  // Signed displacement from the origin, `counts − origin`. What a corridor
+  // position is.
+  double position_cm = 3 [json_name = "position_cm"];
+
+  // A direction-free odometer since the origin was last moved. What "how much
+  // did it run" is.
+  double distance_cm = 4 [json_name = "distance_cm"];
+
+  // Computed by the host from the sample path.
+  double velocity_cm_s = 5 [json_name = "velocity_cm_s"];
+
+  // As the device reported it: counts over a fixed window in its scan, at scan
+  // resolution. Coarser, and the one the analog output and the zone evaluation
+  // were actually done against.
+  //
+  // Both are recorded because they answer different questions, and a record
+  // that silently kept one could not be checked against the other.
+  double device_velocity_cm_s = 6 [json_name = "device_velocity_cm_s"];
+}
+
+// Whether what the rest of the answer says can be believed.
+message LinkHealth {
+  // Samples the daemon never received. **A path with a hole in it says so**
+  // rather than reporting a shorter distance that looks complete.
+  uint64 seq_gaps = 1 [json_name = "seq_gaps"];
+
+  // The device's own rings overflowed: the firmware telling on itself.
+  uint64 ring_drops = 2 [json_name = "ring_drops"];
+
+  // What the samples are actually arriving at, as opposed to what was asked
+  // for. The two differing is the finding.
+  double measured_rate_hz = 3 [json_name = "measured_rate_hz"];
+
+  // No sample for longer than the staleness window. Everything above is the
+  // last thing that was true.
+  bool stale = 4;
+}
+
+// One frame of the state websocket.
+//
+// A oneof rather than a `type` discriminator beside flattened fields: the
+// JSON becomes `{"sample": {…}}` instead of `{"type": "sample", …}`, which is
+// a shape change for the panels and the one place a reader cannot mistake
+// which arm they are holding.
+message StreamFrame {
+  oneof frame {
+    Sample sample = 1;
+    ZoneHitEvent zone_hit = 2 [json_name = "zone_hit"];
+  }
+}
+
+message Sample {
+  // The device's own sample counter. **Not a loss signal for a consumer**:
+  // this stream is decimated, so `seq` skips by design. See `lost_before`.
+  uint64 seq = 1;
+
+  // The device clock. Correlating it with the host's is the daemon's job.
+  uint64 device_us = 2 [json_name = "device_us"];
+
+  // `CLOCK_MONOTONIC` nanoseconds — the join key with statemachined's trace
+  // and vstimd's vblank timestamps.
+  uint64 host_monotonic_ns = 3 [json_name = "host_monotonic_ns"];
+
+  // Samples the daemon **never received** since the previous frame on this
+  // socket, accumulated across the ones decimation dropped. Only the daemon
+  // can tell decimation from loss.
+  uint64 lost_before = 4 [json_name = "lost_before"];
+
+  repeated AxisState axes = 5;
+}
+
+message ZoneHitEvent {
+  string zone = 1;
+  uint32 arm_id = 2 [json_name = "arm_id"];
+  uint64 seq = 3;
+  uint64 host_monotonic_ns = 4 [json_name = "host_monotonic_ns"];
+  double position_cm = 5 [json_name = "position_cm"];
+}

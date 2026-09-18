@@ -8,7 +8,7 @@ PORT ?= 8082
 VERSION ?= $(shell sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
 ARCH ?= amd64
 
-.PHONY: build test check check-schema check-text run dev schema openapi package clean help
+.PHONY: build test check check-proto check-schema check-text run dev schema openapi package clean help
 
 help:
 	@sed -n 's/^\([a-z-]*\):.*## \(.*\)/  \1|\2/p' $(MAKEFILE_LIST) | column -t -s '|'
@@ -19,12 +19,23 @@ build: ## Release binary, with the console panels embedded in it
 test: ## The zone compiler's tests
 	$(CARGO) test --release
 
-check: ## Build, clippy, tests, the committed schema, and that source is text
+check: ## Build, clippy, tests, the proto, the committed schema, and that source is text
 	$(CARGO) build --release
 	$(CARGO) clippy --release --all-targets -- -D warnings
 	$(CARGO) test --release
+	@$(MAKE) --no-print-directory check-proto
 	@$(MAKE) --no-print-directory check-schema
 	@$(MAKE) --no-print-directory check-text
+
+# proto/ is the interface (contracts/DAEMON_LAYOUT.md), and an interface
+# nothing checks is a wish. Two things are checked and they catch different
+# mistakes: protoc catches a file that does not parse, and check_routes.py
+# catches a handler wired into the router with no rpc above it — a piece of
+# public API that exists and is written down nowhere.
+check-proto: ## Fail if the proto does not compile, or does not match the router
+	@protoc --proto_path=proto --descriptor_set_out=/dev/null \
+	  proto/mousewheeld/v1/*.proto proto/braemons/v1/route.proto
+	@python3 tools/check_routes.py
 
 # A NUL byte in a source file makes git call it binary, and a binary file has no
 # diff — so it is reviewed by nobody, silently, for as long as it takes somebody
