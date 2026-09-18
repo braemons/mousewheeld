@@ -31,6 +31,7 @@
 
 import { BasePanelElement, defineElementOnce } from "./base_panel_element.js";
 import { drawEventRules, drawTimeSeries } from "./time_series_chart.js";
+import { count, streamFrame } from "./wire_shapes.js";
 
 const WINDOWS_S = [5, 15, 60];
 const WIDTH = 460;
@@ -145,20 +146,24 @@ export class TracePanelElement extends BasePanelElement {
   /// point and becomes a break in the line. See the note at the top on why this
   /// is not read off `seq`.
   absorb(message) {
-    if (message.type === "zone_hit") {
-      this.events.push({ t: message.host_monotonic_ns / 1e9, label: message.zone });
+    const frame = streamFrame(message);
+    // An arm this build does not know: a frame from a newer daemon, skipped
+    // rather than half-read.
+    if (frame === null) return;
+
+    if (frame.kind === "zone_hit") {
+      this.events.push({ t: count(frame.host_monotonic_ns) / 1e9, label: frame.zone });
       if (this.events.length > 64) this.events.shift();
       return;
     }
-    if (message.type !== "sample") return;
-    const axis = (message.axes || []).find((one) => one.name === this.axisName);
+    const axis = (frame.axes || []).find((one) => one.name === this.axisName);
     if (axis === undefined) return;
 
     const previous = this.points[this.points.length - 1];
-    if (previous !== undefined && (message.lost_before ?? 0) > 0) previous.gapAfter = true;
-    this.lastSeq = message.seq;
+    if (previous !== undefined && count(frame.lost_before) > 0) previous.gapAfter = true;
+    this.lastSeq = count(frame.seq);
     this.points.push({
-      t: message.host_monotonic_ns / 1e9,
+      t: count(frame.host_monotonic_ns) / 1e9,
       position_cm: axis.position_cm,
       host_velocity_cm_s: axis.velocity_cm_s,
       device_velocity_cm_s: axis.device_velocity_cm_s ?? axis.velocity_cm_s,

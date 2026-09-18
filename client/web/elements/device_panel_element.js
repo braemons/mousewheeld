@@ -19,6 +19,7 @@
 //     speeds, and this is where that is visible before an experiment runs.
 
 import { BasePanelElement, defineElementOnce } from "./base_panel_element.js";
+import { count } from "./wire_shapes.js";
 
 const POLL_SECONDS = 1;
 
@@ -93,10 +94,10 @@ export class DevicePanelElement extends BasePanelElement {
         ["protocol", device.protocol_version ?? "—"],
         ["axes", this.axesSummary(device, state)],
         ["stream", this.streamSummary(config, health)],
-        ["seq gaps", this.counter(health.seq_gaps, "samples the daemon never received")],
-        ["ring drops", this.counter(health.ring_drops, "the device's own rings overflowed")],
-        ["reconnects", link.connection_count ?? 0],
-        ["up", formatDeviceMicroseconds(device.uptime_device_us)],
+        ["seq gaps", this.counter(count(health.seq_gaps), "samples the daemon never received")],
+        ["ring drops", this.counter(count(health.ring_drops), "the device's own rings overflowed")],
+        ["reconnects", count(link.connection_count)],
+        ["up", formatDeviceMicroseconds(count(device.uptime_device_us))],
         ["capacity", this.capacitySummary(capacities)],
         ["zone set on flash", device.flashed_zone_set ? `${device.flashed_zone_set.name} v${device.flashed_zone_set.version}` : "none"],
       ]),
@@ -113,7 +114,7 @@ export class DevicePanelElement extends BasePanelElement {
       rows.append(
         this.make("div", { class: "mono" }, [
           this.make("span", { text: `${axis.name}  ` }),
-          this.make("span", { text: `${axis.counts} counts  ` }),
+          this.make("span", { text: `${count(axis.counts)} counts  ` }),
           this.make("span", { text: `${(axis.position_cm ?? 0).toFixed(2)} cm  ` }),
           this.make("span", { class: "muted", text: `${(axis.velocity_cm_s ?? 0).toFixed(1)} cm/s` }),
         ]),

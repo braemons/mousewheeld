@@ -43,6 +43,10 @@ export { SerialMonitorPanelElement } from "./serial_monitor_panel_element.js";
 // able to draw it the way this UI does rather than inventing a second
 // convention for the same numbers.
 export { domainOf, decimalsFor, drawTimeSeries, drawEventRules } from "./time_series_chart.js";
+// The wire's shapes, exported for the same reason: protobuf's JSON mapping puts
+// a 64-bit integer in a string and spells an enum in full, and a console that
+// reads this daemon's answers directly should not have to rediscover that.
+export { count, enumName, metricName, streamFrame, bound } from "./wire_shapes.js";
 
 /// The tag names, so a console can iterate them rather than hard-code a list
 /// that goes stale when a panel is added.

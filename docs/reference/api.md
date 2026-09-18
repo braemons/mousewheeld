@@ -1,11 +1,19 @@
 # mousewheeld — the HTTP API
 
 > **Status:** written against the daemon that serves it, and kept beside it. The
-> machine-readable schema is at `/api/openapi.json`, generated from the same
-> Rust types the routes use — **it is not a second description of them**, which
-> is why this document does not repeat field lists. What it says is the part a
-> generated document cannot: what a route is *for*, when to use one rather than
-> another, and what a refusal means.
+> interface itself — every type and every rpc — is `proto/mousewheeld/v1/`,
+> served by the daemon at `/api/proto`, and the Rust the routes speak is
+> generated from it. **This is not a second description of that**, which is why
+> it does not repeat field lists. What it says is the part a schema cannot:
+> what a route is *for*, when to use one rather than another, and what a refusal
+> means.
+>
+> Two spellings to know before reading anything below. A 64-bit integer is a
+> **string** on the wire (`"counts": "41822"`), because JSON numbers are
+> doubles; and an enum is its full name (`"ZONE_SHAPE_RECT"`), so that clients
+> generated in different languages agree about the same byte. Both are
+> protobuf's JSON mapping, and `daemon/tests/wire_json.rs` holds the daemon to
+> them.
 
 Two callers, and they want different things.
 

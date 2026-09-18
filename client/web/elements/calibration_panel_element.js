@@ -20,6 +20,7 @@
 // invalidates every compiled zone set and is recorded as an event.
 
 import { BasePanelElement, defineElementOnce } from "./base_panel_element.js";
+import { count } from "./wire_shapes.js";
 
 const POLL_SECONDS = 1;
 /// Ratios that mean a decoder, not a wheel: quadrature counted ×1 or ×2 where
@@ -120,7 +121,7 @@ export class CalibrationPanelElement extends BasePanelElement {
 
     if (this.measuring !== null) {
       const axis = (state.axes || []).find((one) => one.name === this.measuring.axis);
-      const counts = axis ? Math.abs(axis.counts - this.measuring.counts_at_start) : 0;
+      const counts = axis ? Math.abs(count(axis.counts) - this.measuring.counts_at_start) : 0;
       this.liveCounts.textContent = `${counts} counts`;
     }
   }
@@ -163,7 +164,7 @@ export class CalibrationPanelElement extends BasePanelElement {
     const knownDistanceCm = Number(this.distanceField.value);
     const started = await this.attempt(() => this.api.startMeasuring(axisName, knownDistanceCm));
     if (started === null) return;
-    this.measuring = { axis: axisName, known_distance_cm: knownDistanceCm, counts_at_start: started.counts };
+    this.measuring = { axis: axisName, known_distance_cm: knownDistanceCm, counts_at_start: count(started.counts) };
     this.result = null;
     this.startButton.disabled = true;
     this.finishButton.disabled = false;
@@ -194,7 +195,7 @@ export class CalibrationPanelElement extends BasePanelElement {
 
     const rows = [
       ["rolled", `${result.known_distance_cm} cm`],
-      ["counted", `${result.counts} counts`],
+      ["counted", `${count(result.counts)} counts`],
       ["measured", this.make("span", { class: "mono", text: `${measured.toFixed(3)} counts/cm` })],
       ["configured", this.make("span", { class: "mono muted", text: `${configured.toFixed(3)} counts/cm` })],
       [
@@ -217,7 +218,7 @@ export class CalibrationPanelElement extends BasePanelElement {
               `decoding mistake, not a wheel — check the quadrature multiplier before applying it.`,
           })
         : null,
-      result.counts < 100
+      count(result.counts) < 100
         ? this.make("p", { class: "bad", text: "too few counts to calibrate anything — did the wheel turn?" })
         : null,
       this.make("div", { class: "row" }, [

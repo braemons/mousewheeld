@@ -15,17 +15,27 @@
 // on a circular track that is the position the zone is actually compared to.
 //
 // **An armed zone is drawn from what is armed, not from what is stored.** A
-// parameterised set says `"min_cm": ["$goal_cm"]`, and the stored copy has no
+// parameterised set says `"min_cm": [{"reference": "goal_cm"}]`, and it has no
 // number in it at all: drawn from the store, a set armed at 180 cm appears at
 // zero, which is a picture of a zone that is not running. `GET /api/zones`
 // carries each armed zone's resolved bounds for exactly this, and the store's
 // own view labels an unresolved bound `$name` rather than pretending it is a
 // distance.
 //
-// **Editing is the JSON, deliberately.** The zone set is one type on the
-// daemon — the HTTP body, the file in the store and the thing the compiler
-// reads — and a form that reproduced it here would be a second, worse copy of
-// that schema, drifting from the first time a field is added.
+// **Editing is the JSON, deliberately.** A form reproducing the zone set here
+// would be a second, worse copy of its schema, drifting from the first time a
+// field is added.
+//
+// **It is the API's JSON, not the file's, and the two differ on purpose.** What
+// this editor holds is what `GET /api/zone-sets/{name}` answered: bounds as
+// `{"value": 30}` / `{"reference": "goal_cm"}` / `{}`, enums spelled
+// `ZONE_SHAPE_RECT`. The file in the store keeps the shorter spelling a person
+// writes by hand — `30`, `"$goal_cm"`, `null`, `"rect"` — and the daemon
+// converts between them. So **the text of a file cannot be pasted in here**,
+// and what is typed here is not what lands on disk. That is the price of the
+// interface being one typed thing (`proto/mousewheeld/v1/zones.proto`) while
+// the file stays pleasant to edit, and it is the right way round: the shape a
+// client must get exactly right is the one a generator produces.
 //
 // What the editor owes instead is **telling you as you type**. Every edit is
 // compiled by the daemon — the real deserializer, the real compiler, against
@@ -42,6 +52,7 @@
 // CI.
 
 import { BasePanelElement, defineElementOnce } from "./base_panel_element.js";
+import { bound, metricName } from "./wire_shapes.js";
 
 const POLL_SECONDS = 1;
 const WIDTH = 460;
@@ -132,10 +143,11 @@ export class ZonePanelElement extends BasePanelElement {
             target: "_blank",
             class: "muted",
             style: "font-size:0.8rem",
-            text: "schema",
+            text: "file schema",
             title:
-              "This set's JSON Schema. Put its URL in a file's \"$schema\" line and an editor " +
-              "validates it as you type; point a checker at it in CI.",
+              "The JSON Schema of a zone set FILE — the stored spelling, not the one in this " +
+              "editor. Put its URL in a file's \"$schema\" line and a text editor validates it " +
+              "as you type; point a checker at it in CI. The API's own shape is at /api/proto.",
           }),
         ]),
       ]),
@@ -243,7 +255,10 @@ export class ZonePanelElement extends BasePanelElement {
 
     const bounds = [0];
     for (const { low, high } of drawn) {
-      for (const value of [low, high]) if (typeof value === "number") bounds.push(value);
+      for (const value of [low, high]) {
+        const number = boundValue(value);
+        if (number !== null) bounds.push(number);
+      }
     }
     const position = this.positionOn(axis, mine, wrap);
     if (position !== null) bounds.push(position);
@@ -274,8 +289,8 @@ export class ZonePanelElement extends BasePanelElement {
       // A reference has no place on the track: it is drawn as the whole span,
       // faintly, and labelled with the name it is waiting for.
       const unresolved = isReference(lowRaw) || isReference(highRaw);
-      const from = unresolved ? 0 : numberOr(lowRaw, 0);
-      const to = unresolved ? span : numberOr(highRaw, span);
+      const from = unresolved ? 0 : (boundValue(lowRaw) ?? 0);
+      const to = unresolved ? span : (boundValue(highRaw) ?? span);
       const fill = live?.fired ? "var(--series-device)" : live ? "var(--series-host)" : "var(--chart-stale)";
       node.append(
         this.svg("rect", {
@@ -362,7 +377,7 @@ export class ZonePanelElement extends BasePanelElement {
   /// against a displacement marker would be a picture of the wrong thing.
   positionOn(axis, zones, wrap) {
     if (axis === undefined) return null;
-    const onDistance = zones.some((zone) => zone.metric === "distance");
+    const onDistance = zones.some((zone) => metricName(zone.metric) === "distance");
     const value = onDistance ? axis.distance_cm : axis.position_cm;
     if (typeof value !== "number") return null;
     return wrap ? ((value % wrap) + wrap) % wrap : value;
@@ -435,26 +450,34 @@ export class ZonePanelElement extends BasePanelElement {
   }
 }
 
-function numberOr(value, fallback) {
-  return typeof value === "number" ? value : fallback;
-}
-
+/// A bound waiting for a value the arm patch has not supplied yet.
+///
+/// On the wire an authored bound is a `oneof`: `{"value": 30}`, or
+/// `{"reference": "goal_cm"}`, or `{}` for an open end. An *armed* bound cannot
+/// be a reference at all — the daemon resolved it before the board saw it — and
+/// says so by being a different type, `ResolvedBound`, which has no reference
+/// arm to check.
 function isReference(value) {
-  return typeof value === "string";
+  return typeof value?.reference === "string";
 }
 
 /// The bound to draw: the armed one where there is one, the stored one
-/// otherwise. `null` is an open bound in both, and stays open.
+/// otherwise. An open bound stays open in both.
 function boundOf(live, zone, field, index) {
   const armed = live?.[field]?.[index];
   if (armed !== undefined) return armed;
   return zone[field]?.[index];
 }
 
+/// A bound as a number, or `null` for open or still-unresolved.
+function boundValue(value) {
+  return isReference(value) ? null : bound(value);
+}
+
 function describeBound(value, whenOpen) {
-  if (isReference(value)) return value;
-  if (value === null || value === undefined) return whenOpen;
-  return value.toFixed(0);
+  if (isReference(value)) return `$${value.reference}`;
+  const number = bound(value);
+  return number === null ? whenOpen : number.toFixed(0);
 }
 
 defineElementOnce("mousewheeld-zones", ZonePanelElement);

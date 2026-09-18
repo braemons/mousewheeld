@@ -23,6 +23,7 @@
 // here anyway.
 
 import { BasePanelElement, defineElementOnce } from "./base_panel_element.js";
+import { count, directionName, levelName } from "./wire_shapes.js";
 
 /// What the browser holds, split the way the daemon splits it. A single ring
 /// floods: at 500 Hz the samples evict the greeting and the arm within seconds,
@@ -155,7 +156,7 @@ export class SerialMonitorPanelElement extends BasePanelElement {
     this.hiddenSamples = this.showsSamples ? 0 : this.samples.length;
     const lines = this.showsSamples
       ? [...this.conversation, ...this.samples].sort(
-          (a, b) => a.host_monotonic_ns - b.host_monotonic_ns,
+          (a, b) => count(a.host_monotonic_ns) - count(b.host_monotonic_ns),
         )
       : this.conversation;
     if (!this.textFilter) return lines;
@@ -167,13 +168,13 @@ export class SerialMonitorPanelElement extends BasePanelElement {
     this.rows.replaceChildren(
       ...visible.map((line) =>
         this.make("tr", {}, [
-          this.make("td", { class: "mono muted", text: formatHostTime(line.host_monotonic_ns) }),
+          this.make("td", { class: "mono muted", text: formatHostTime(count(line.host_monotonic_ns)) }),
           this.make("td", {
-            class: line.direction === "out" ? "mono" : "mono muted",
-            title: line.direction === "out" ? "daemon → board" : "board → daemon",
-            text: line.direction === "out" ? "→" : "←",
+            class: directionName(line.direction) === "out" ? "mono" : "mono muted",
+            title: directionName(line.direction) === "out" ? "daemon → board" : "board → daemon",
+            text: directionName(line.direction) === "out" ? "→" : "←",
           }),
-          this.make("td", { class: line.level === "error" ? "mono bad" : "mono", text: line.text }),
+          this.make("td", { class: levelName(line.level) === "error" ? "mono bad" : "mono", text: line.text }),
         ]),
       ),
     );
