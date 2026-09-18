@@ -36,6 +36,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // looking at the same schema rather than at two parses of it.
     let descriptor_path = out_dir.join("descriptor.bin");
 
+    // THE SPIKE: also emit tonic service stubs, so the rpcs in the .proto
+    // become a trait the daemon implements rather than a router it maintains.
+    let service_dir = out_dir.join("service");
+    std::fs::create_dir_all(&service_dir)?;
+    let mut tonic = tonic_prost_build::Config::new();
+    tonic
+        .out_dir(&service_dir)
+        .extern_path(".google.protobuf", "::pbjson_types")
+        // Point at the messages prost already generated rather than making a
+        // second set: without this the trait asks for `service::DeviceInfo`
+        // and the daemon has a `wire::DeviceInfo`, which are different types
+        // with the same fields.
+        .extern_path(".mousewheeld.v1", "crate::wire")
+        .compile_well_known_types()
+        .retain_enum_prefix()
+        .btree_map(["."]);
+    tonic_prost_build::configure()
+        .build_server(true)
+        // FINDING: an rpc named `Connect` collides with the generated client's
+        // own `connect(dst)` constructor. The daemon needs no Rust client, so
+        // this sidesteps it — but gRPC would force renaming Device.Connect.
+        .build_client(false)
+        .out_dir(&service_dir)
+        .file_descriptor_set_path(out_dir.join("descriptor_for_reflection.bin"))
+        .compile_with_config(tonic, &files, &[proto_root.clone()])?;
+
     let mut config = prost_build::Config::new();
     config
         .out_dir(&out_dir)

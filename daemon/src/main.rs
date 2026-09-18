@@ -186,7 +186,44 @@ fn serve(port: u16, bind: String, rig_config: PathBuf, storage_dir: PathBuf, sim
             }
         };
         log::info!("mousewheeld on http://{address}  (panels at /, interface at /api/proto)");
-        let app = api::router(daemon);
+
+        // THE SPIKE: axum and tonic on one port.
+        //
+        // A tonic service is a tower service, so it merges into the axum router
+        // that already serves the panels and the REST API. One listener, one
+        // systemd unit, one port in the udev/firewall story — which is what
+        // makes this fit the deb without changing the packaging at all.
+        use tower::ServiceBuilder;
+        let grpc = ServiceBuilder::new()
+            .layer(tonic_web::GrpcWebLayer::new())
+            .service(mousewheeld::grpc_spike::device_server(daemon.clone()));
+        // Both reflection versions, because clients disagree about which to
+        // ask for: grpcurl and Python's reflection database still use v1alpha.
+        let reflection = tonic_reflection::server::Builder::configure()
+            .register_encoded_file_descriptor_set(mousewheeld::wire::DESCRIPTOR)
+            .build_v1()
+            .expect("the descriptor set this binary was built from");
+        let reflection_alpha = tonic_reflection::server::Builder::configure()
+            .register_encoded_file_descriptor_set(mousewheeld::wire::DESCRIPTOR)
+            .build_v1alpha()
+            .expect("the descriptor set this binary was built from");
+        let app = api::router(daemon)
+            .route_service(
+                "/mousewheeld.v1.Device/{*rest}",
+                grpc,
+            )
+            .route_service(
+                "/grpc.reflection.v1.ServerReflection/{*rest}",
+                ServiceBuilder::new()
+                    .layer(tonic_web::GrpcWebLayer::new())
+                    .service(reflection),
+            )
+            .route_service(
+                "/grpc.reflection.v1alpha.ServerReflection/{*rest}",
+                ServiceBuilder::new()
+                    .layer(tonic_web::GrpcWebLayer::new())
+                    .service(reflection_alpha),
+            );
         if let Err(problem) = axum::serve(listener, app)
             .with_graceful_shutdown(async {
                 let _ = tokio::signal::ctrl_c().await;

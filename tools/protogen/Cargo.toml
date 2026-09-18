@@ -15,3 +15,4 @@ license = "AGPL-3.0-or-later"
 [dependencies]
 prost-build = "0.14"
 pbjson-build = "0.9"
+tonic-prost-build = "0.14"

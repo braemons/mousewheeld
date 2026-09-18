@@ -13,6 +13,7 @@ pub mod api;
 pub mod convert;
 pub mod daemon_state;
 pub mod device;
+pub mod grpc_spike;
 pub mod link;
 pub mod model;
 pub mod publish;
