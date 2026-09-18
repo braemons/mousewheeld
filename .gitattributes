@@ -1,0 +1,13 @@
+# Source is text, and git should treat it as text even when it briefly is not.
+#
+# Three element files spent a week as `Bin` in every diff because a generation
+# script wrote a literal NUL where a unicode escape was meant. Nobody could have
+# reviewed them, and nobody noticed — which in a repository this careful about
+# reviewable artifacts is the whole lesson. `make check` now refuses a NUL in
+# tracked source; this is the second line of defence.
+*.rs   text diff
+*.js   text diff
+*.toml text diff
+*.json text diff
+*.md   text diff
+*.html text diff

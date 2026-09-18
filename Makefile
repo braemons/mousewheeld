@@ -8,7 +8,7 @@ PORT ?= 8082
 VERSION ?= $(shell sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
 ARCH ?= amd64
 
-.PHONY: build test check check-schema run dev schema openapi package clean help
+.PHONY: build test check check-schema check-text run dev schema openapi package clean help
 
 help:
 	@sed -n 's/^\([a-z-]*\):.*## \(.*\)/  \1|\2/p' $(MAKEFILE_LIST) | column -t -s '|'
@@ -19,11 +19,23 @@ build: ## Release binary, with the console panels embedded in it
 test: ## The zone compiler's tests
 	$(CARGO) test --release
 
-check: ## Build, clippy, tests, and the committed schema, as CI would
+check: ## Build, clippy, tests, the committed schema, and that source is text
 	$(CARGO) build --release
 	$(CARGO) clippy --release --all-targets -- -D warnings
 	$(CARGO) test --release
 	@$(MAKE) --no-print-directory check-schema
+	@$(MAKE) --no-print-directory check-text
+
+# A NUL byte in a source file makes git call it binary, and a binary file has no
+# diff — so it is reviewed by nobody, silently, for as long as it takes somebody
+# to notice. That happened here: three panels spent a week that way after a
+# generation script interpreted a unicode escape instead of writing it.
+check-text: ## Fail if any tracked source file contains a NUL byte
+	@git grep -lIP '\x00' -- '*.rs' '*.js' '*.toml' '*.json' '*.md' '*.html' > /dev/null 2>&1 && { \
+	  echo "a tracked source file contains a NUL byte — git will treat it as binary:"; \
+	  git grep -lIP '\x00' -- '*.rs' '*.js' '*.toml' '*.json' '*.md' '*.html'; \
+	  exit 1; \
+	} || true
 
 run: build ## Serve against a real board, from the installed rig config
 	./target/release/mousewheeld serve --port $(PORT)
