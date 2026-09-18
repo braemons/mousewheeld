@@ -13,23 +13,16 @@
 //! link will be, is a simulated wheel — `--simulate`. The seam is
 //! [`device::Device`], and nothing above it changes when a board arrives.
 
-mod api;
-mod daemon_state;
-mod device;
-mod link;
-mod model;
-mod publish;
-mod zones;
-
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use clap::{Parser, Subcommand};
 
-use daemon_state::Daemon;
-use device::{Backend, Device};
-use model::config::RigConfig;
-use zones::ZoneSetStore;
+use mousewheeld::daemon_state::Daemon;
+use mousewheeld::device::{Backend, Device};
+use mousewheeld::model::config::RigConfig;
+use mousewheeld::zones::ZoneSetStore;
+use mousewheeld::{api, device, publish};
 
 /// statemachined is 8081, vstimd 8080, triald 8420.
 const DEFAULT_PORT: u16 = 8082;

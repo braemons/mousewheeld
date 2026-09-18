@@ -25,6 +25,11 @@ clap = { version = "4", features = ["derive"] }
 # description of it.
 utoipa = { version = "5", features = ["axum_extras"] }
 rust-embed = "8"
+# The generated wire types and their JSON mapping. Runtime only: the generators
+# live in tools/protogen, outside the workspace, and run from `make proto`.
+prost = "0.14"
+pbjson = "0.9"
+pbjson-types = "0.9"
 mime_guess = "2"
 log = "0.4"
 env_logger = "0.11"

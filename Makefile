@@ -8,7 +8,7 @@ PORT ?= 8082
 VERSION ?= $(shell sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
 ARCH ?= amd64
 
-.PHONY: build test check check-proto check-schema check-text run dev schema openapi package clean help
+.PHONY: build test check proto check-proto check-schema check-text run dev schema openapi package clean help
 
 help:
 	@sed -n 's/^\([a-z-]*\):.*## \(.*\)/  \1|\2/p' $(MAKEFILE_LIST) | column -t -s '|'
@@ -27,14 +27,29 @@ check: ## Build, clippy, tests, the proto, the committed schema, and that source
 	@$(MAKE) --no-print-directory check-schema
 	@$(MAKE) --no-print-directory check-text
 
+# The generated code is committed, so `cargo build` needs no protoc and a
+# reviewer sees an interface change as a diff. tools/protogen is outside the
+# workspace for the same reason: its generators are not dependencies of the
+# daemon.
+proto: ## Regenerate daemon/src/wire/ from proto/
+	$(CARGO) run --quiet --manifest-path tools/protogen/Cargo.toml
+
 # proto/ is the interface (contracts/DAEMON_LAYOUT.md), and an interface
-# nothing checks is a wish. Two things are checked and they catch different
-# mistakes: protoc catches a file that does not parse, and check_routes.py
-# catches a handler wired into the router with no rpc above it — a piece of
-# public API that exists and is written down nowhere.
-check-proto: ## Fail if the proto does not compile, or does not match the router
+# nothing checks is a wish. Three things are checked and they catch different
+# mistakes: protoc catches a file that does not parse; the regenerated output
+# catches committed code that no longer matches the schema; and
+# check_routes.py catches a handler wired into the router with no rpc above it
+# — a piece of public API that exists and is written down nowhere.
+check-proto: ## Fail if the proto does not compile, is stale, or misses a route
 	@protoc --proto_path=proto --descriptor_set_out=/dev/null \
 	  proto/mousewheeld/v1/*.proto proto/braemons/v1/route.proto
+	@$(MAKE) --no-print-directory proto
+	@git diff --quiet -- daemon/src/wire || { \
+	  echo "daemon/src/wire/ is not what proto/ produces — the interface changed:"; \
+	  git --no-pager diff --stat -- daemon/src/wire; \
+	  echo "run 'make proto' and commit the result with the change that caused it."; \
+	  exit 1; \
+	}
 	@python3 tools/check_routes.py
 
 # A NUL byte in a source file makes git call it binary, and a binary file has no

@@ -3,3 +3,7 @@
 # `make dev` puts a zone-set store here rather than in /var/lib.
 /dev/store
 /dist
+
+# tools/protogen is its own crate outside the workspace, so it builds into its
+# own target directory; the root /target pattern is anchored and misses it.
+tools/protogen/target/

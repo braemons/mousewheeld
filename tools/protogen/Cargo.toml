@@ -1,0 +1,17 @@
+# Generates `daemon/src/wire/` from `proto/`, and is **not** a workspace member.
+#
+# The generated code is committed (contracts/DAEMON_LAYOUT.md), so a checkout
+# builds with cargo alone and needs no protoc; this crate runs only when
+# somebody changes the interface, via `make proto`. Keeping it out of the
+# workspace is what stops prost-build and pbjson-build — and protoc with them —
+# from becoming build dependencies of the daemon.
+[package]
+name = "protogen"
+version = "0.0.0"
+edition = "2021"
+publish = false
+license = "AGPL-3.0-or-later"
+
+[dependencies]
+prost-build = "0.14"
+pbjson-build = "0.9"
