@@ -86,8 +86,15 @@ impl ApiError {
 }
 
 impl IntoResponse for ApiError {
+    /// Through `convert`, like every other answer.
+    ///
+    /// The two shapes happen to be identical today, which is exactly why this
+    /// is worth doing rather than serialising `self.body` directly: the moment
+    /// they are not, a refusal would be the one response on this API that had
+    /// quietly kept its own spelling.
     fn into_response(self) -> Response {
-        (self.status, axum::Json(self.body)).into_response()
+        let body = crate::convert::error::error_to_wire(self.body);
+        (self.status, axum::Json(body)).into_response()
     }
 }
 

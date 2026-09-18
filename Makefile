@@ -8,7 +8,7 @@ PORT ?= 8082
 VERSION ?= $(shell sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
 ARCH ?= amd64
 
-.PHONY: build test check proto check-proto check-schema check-text run dev schema openapi package clean help
+.PHONY: build test check proto check-proto check-schema check-text run dev schema package clean help
 
 help:
 	@sed -n 's/^\([a-z-]*\):.*## \(.*\)/  \1|\2/p' $(MAKEFILE_LIST) | column -t -s '|'
@@ -75,15 +75,18 @@ dev: ## A wheel on a thread, elements served from disk, panels at http://127.0.0
 		--rig-config packaging/mousewheeld-rig-config.toml \
 		--storage-dir ./dev/store
 
-# **The zone set's schema is committed; the API document is not.**
+# **The zone set's schema is committed, and so is the interface.**
 #
-# They are different kinds of artifact. A zone set is a *file* — hand-edited,
-# copied between rigs, reviewed in a pull request — so its schema belongs in the
-# repository where an editor and CI can reach it without a daemon running, and a
-# change to it should show up in a diff. The API document is 2000 lines of
-# generated JSON that nobody reads; it is served at `/api/openapi.json` for
-# clients and code generators, and what a person reads instead is
-# docs/reference/api.md, written by hand.
+# Both belong in the repository and they are different artifacts. A zone set is
+# a *file* — hand-edited, copied between rigs, reviewed in a pull request — so
+# its schema must be reachable by an editor and by CI without a daemon running.
+# The interface is proto/, authored rather than generated, and the daemon serves
+# it as itself at /api/proto.
+#
+# What is gone is the generated OpenAPI document. It described the API by
+# restating what the handlers happened to do, which is exactly the second
+# description contracts/DAEMON_LAYOUT.md exists to prevent now that the first
+# one is written by hand.
 schema: build ## Regenerate docs/reference/zone-set.schema.json from the types
 	@./target/release/mousewheeld serve --simulate --port 8099 --storage-dir ./dev/store & \
 	 pid=$$!; sleep 1; \
@@ -100,14 +103,6 @@ check-schema: ## Fail if the committed schema is not what the code produces
 	  echo "commit the regenerated schema with the change that caused it."; \
 	  exit 1; \
 	}
-
-openapi: build ## Write the served API document to dist/, for a code generator
-	@mkdir -p dist
-	@./target/release/mousewheeld serve --simulate --port 8099 --storage-dir ./dev/store & \
-	 pid=$$!; sleep 1; \
-	 curl -fsS http://127.0.0.1:8099/api/openapi.json -o dist/openapi.json; \
-	 kill $$pid; \
-	 echo "dist/openapi.json"
 
 package: build ## deb and rpm, from packaging/nfpm.yaml
 	@mkdir -p dist

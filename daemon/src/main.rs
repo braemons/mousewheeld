@@ -185,7 +185,7 @@ fn serve(port: u16, bind: String, rig_config: PathBuf, storage_dir: PathBuf, sim
                 std::process::exit(1);
             }
         };
-        log::info!("mousewheeld on http://{address}  (panels at /, API at /api/openapi.json)");
+        log::info!("mousewheeld on http://{address}  (panels at /, interface at /api/proto)");
         let app = api::router(daemon);
         if let Err(problem) = axum::serve(listener, app)
             .with_graceful_shutdown(async {

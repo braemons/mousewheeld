@@ -14,7 +14,8 @@ pub mod calibration_routes;
 pub mod config_routes;
 pub mod device_routes;
 pub mod elements;
-pub mod openapi;
+pub mod file_schemas;
+pub mod proto_files;
 pub mod schema;
 pub mod state_routes;
 pub mod zone_routes;
@@ -95,8 +96,8 @@ pub fn router(daemon: Arc<Daemon>) -> Router {
         .route("/api/zones/save", post(zone_routes::save_to_flash))
         .route("/api/config", get(config_routes::read_config).patch(config_routes::patch_config))
         .route("/api/lines", get(config_routes::read_lines))
-        .route("/api/openapi.json", get(openapi::openapi_document))
         .merge(elements::routes())
+        .merge(proto_files::routes())
         .layer(CorsLayer::permissive())
         .with_state(daemon)
 }

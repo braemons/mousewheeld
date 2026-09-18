@@ -8,15 +8,19 @@
 //! Handing an editor a 2000-line OpenAPI document and asking it to find
 //! `components/schemas/ZoneSet` is not that.
 //!
-//! It is **extracted from the same generated document**, not written again.
-//! There is one description of a zone set in this daemon, it lives on the Rust
-//! type, and this is a view of it with the references rewritten from
-//! `#/components/schemas/` to `#/$defs/`.
+//! It is **extracted from the generated document**, not written again. There is
+//! one description of a zone set *file* in this daemon, it lives on the `model`
+//! type that reads and writes it, and this is a view of that with the
+//! references rewritten from `#/components/schemas/` to `#/$defs/`.
+//!
+//! Note which description. The wire's `ZoneSet` is in the proto and differs on
+//! purpose — `{"reference": "goal_cm"}` where the file says `"$goal_cm"`. This
+//! schema is the file's, because an editor has the file open.
 
 use axum::Json;
 use serde_json::{json, Map, Value};
 
-use super::openapi::ApiDoc;
+use super::file_schemas::FileSchemas;
 use utoipa::OpenApi;
 
 /// A standalone JSON Schema for one component, with everything it references.
@@ -24,7 +28,7 @@ use utoipa::OpenApi;
 /// 2020-12, which is the dialect OpenAPI 3.1 already speaks — so this is a
 /// re-rooting, not a translation.
 pub fn standalone_schema(root: &str, id: &str, title: &str) -> Value {
-    let document = serde_json::to_value(ApiDoc::openapi()).unwrap_or_else(|_| json!({}));
+    let document = serde_json::to_value(FileSchemas::openapi()).unwrap_or_else(|_| json!({}));
     let schemas = document
         .pointer("/components/schemas")
         .and_then(Value::as_object)
@@ -79,10 +83,6 @@ fn references_in(value: &Value) -> Vec<String> {
 }
 
 /// `GET /api/zone-sets/schema` — what a zone set may contain.
-#[utoipa::path(
-    get, path = "/api/zone-sets/schema", tag = "zones",
-    responses((status = 200, description = "JSON Schema 2020-12 for a zone set")),
-)]
 pub async fn zone_set_schema() -> Json<Value> {
     Json(standalone_schema(
         "ZoneSet",

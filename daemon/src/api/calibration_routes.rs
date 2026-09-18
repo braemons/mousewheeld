@@ -11,32 +11,30 @@ use axum::extract::State;
 use axum::Json;
 
 use crate::api::ApiJson;
-use crate::daemon_state::{Daemon, MeasurementInProgress};
-use crate::model::calibration::{
-    BallCalibration, Calibration, CalibrationPatch, MeasurementApplied, MeasurementResult,
-    MeasurementStarted, StartMeasurement,
+use crate::convert::calibration::{
+    calibration_patch_from_wire, calibration_to_wire, measurement_applied_to_wire,
+    measurement_result_to_wire, measurement_started_to_wire, start_measurement_from_wire,
 };
+use crate::daemon_state::{Daemon, MeasurementInProgress};
+use crate::model::calibration::{MeasurementApplied, MeasurementResult, MeasurementStarted};
 use crate::model::{ApiError, ApiResult};
+use crate::wire;
 
 /// Ratios that mean a decoder rather than a wheel: quadrature counted ×1 or ×2
 /// where the counts-per-revolution assumed ×4. It looks exactly like a wheel of
 /// the wrong size, so the daemon says which it thinks it is.
 const DECODING_RATIOS: [(f64, &str); 4] = [(4.0, "4×"), (2.0, "2×"), (0.5, "½×"), (0.25, "¼×")];
 
-#[utoipa::path(get, path = "/api/calibration", tag = "calibration",
-    responses((status = 200, body = Calibration)))]
-pub async fn read_calibration(State(daemon): State<Arc<Daemon>>) -> Json<Calibration> {
-    Json(daemon.calibration())
+pub async fn read_calibration(State(daemon): State<Arc<Daemon>>) -> Json<wire::CalibrationState> {
+    Json(calibration_to_wire(daemon.calibration()))
 }
 
 /// Change a calibration by hand. Every field optional; the rest is left alone.
-#[utoipa::path(put, path = "/api/calibration", tag = "calibration",
-    request_body = CalibrationPatch,
-    responses((status = 200, body = Calibration), (status = 404, description = "no such axis")))]
 pub async fn replace_calibration(
     State(daemon): State<Arc<Daemon>>,
-    ApiJson(patch): ApiJson<CalibrationPatch>,
-) -> ApiResult<Json<Calibration>> {
+    ApiJson(patch): ApiJson<wire::CalibrationPatch>,
+) -> ApiResult<Json<wire::CalibrationState>> {
+    let patch = calibration_patch_from_wire(patch);
     {
         let mut config = daemon.config.lock().unwrap();
         for change in &patch.axes {
@@ -76,20 +74,15 @@ pub async fn replace_calibration(
     daemon
         .save_config()
         .map_err(|problem| ApiError::internal("config_unwritable", problem))?;
-    Ok(Json(daemon.calibration()))
+    Ok(Json(calibration_to_wire(daemon.calibration())))
 }
 
 /// The 2-D skeleton: modelled, routed, and refused by name.
-#[utoipa::path(get, path = "/api/calibration/ball", tag = "calibration",
-    responses((status = 501, description = "arrives with the hardware")))]
-pub async fn read_ball() -> ApiResult<Json<BallCalibration>> {
+pub async fn read_ball() -> ApiResult<Json<wire::BallCalibration>> {
     Err(ball_is_not_here())
 }
 
-#[utoipa::path(put, path = "/api/calibration/ball", tag = "calibration",
-    request_body = BallCalibration,
-    responses((status = 501, description = "arrives with the hardware")))]
-pub async fn replace_ball() -> ApiResult<Json<BallCalibration>> {
+pub async fn replace_ball() -> ApiResult<Json<wire::BallCalibration>> {
     Err(ball_is_not_here())
 }
 
@@ -102,13 +95,11 @@ fn ball_is_not_here() -> ApiError {
 }
 
 /// Note the counter and start counting.
-#[utoipa::path(post, path = "/api/calibration/measure/start", tag = "calibration",
-    request_body = StartMeasurement,
-    responses((status = 200, body = MeasurementStarted), (status = 503, description = "no board")))]
 pub async fn start_measurement(
     State(daemon): State<Arc<Daemon>>,
-    ApiJson(request): ApiJson<StartMeasurement>,
-) -> ApiResult<Json<MeasurementStarted>> {
+    ApiJson(request): ApiJson<wire::StartMeasurement>,
+) -> ApiResult<Json<wire::MeasurementStarted>> {
+    let request = start_measurement_from_wire(request);
     if request.known_distance_cm <= 0.0 {
         return Err(ApiError::refused(
             "bad_distance",
@@ -129,21 +120,19 @@ pub async fn start_measurement(
         counts_at_start: counts,
     });
     *daemon.measured.lock().unwrap() = None;
-    Ok(Json(MeasurementStarted {
+    Ok(Json(measurement_started_to_wire(MeasurementStarted {
         axis: request.axis,
         known_distance_cm: request.known_distance_cm,
         counts_at_start: counts,
         counts,
-    }))
+    })))
 }
 
 /// Stop counting and report — measured beside configured, and what the
 /// difference looks like.
-#[utoipa::path(post, path = "/api/calibration/measure/finish", tag = "calibration",
-    responses((status = 200, body = MeasurementResult), (status = 409, description = "nothing is being measured")))]
 pub async fn finish_measurement(
     State(daemon): State<Arc<Daemon>>,
-) -> ApiResult<Json<MeasurementResult>> {
+) -> ApiResult<Json<wire::MeasurementResult>> {
     let started = daemon
         .measuring
         .lock()
@@ -200,15 +189,13 @@ pub async fn finish_measurement(
             }),
     };
     *daemon.measured.lock().unwrap() = Some(result.clone());
-    Ok(Json(result))
+    Ok(Json(measurement_result_to_wire(result)))
 }
 
 /// Make the measurement the rig's truth.
-#[utoipa::path(post, path = "/api/calibration/measure/apply", tag = "calibration",
-    responses((status = 200, body = MeasurementApplied), (status = 409, description = "nothing measured")))]
 pub async fn apply_measurement(
     State(daemon): State<Arc<Daemon>>,
-) -> ApiResult<Json<MeasurementApplied>> {
+) -> ApiResult<Json<wire::MeasurementApplied>> {
     let result = daemon
         .measured
         .lock()
@@ -238,11 +225,11 @@ pub async fn apply_measurement(
     // reinterpreted under another, and the next arm recompiles.
     daemon.device.disarm();
 
-    Ok(Json(MeasurementApplied {
+    Ok(Json(measurement_applied_to_wire(MeasurementApplied {
         axis: result.axis,
         counts_per_cm: result.measured_counts_per_cm,
         zone_sets_invalidated: true,
-    }))
+    })))
 }
 
 /// Push the calibration into the running axes, so what the API reports in

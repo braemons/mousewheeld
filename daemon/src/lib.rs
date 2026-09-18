@@ -10,6 +10,7 @@
 //! interface at the top, and `convert/` the seam between the two.
 
 pub mod api;
+pub mod convert;
 pub mod daemon_state;
 pub mod device;
 pub mod link;

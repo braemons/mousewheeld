@@ -10,26 +10,25 @@ use axum::response::Response;
 use axum::Json;
 
 use crate::api::ApiJson;
+use crate::convert::state::{rig_state_to_wire, stream_frame_to_wire, zero_request_from_wire};
 use crate::daemon_state::Daemon;
-use crate::model::state::{RigState, StreamFrame, ZeroRequest};
+use crate::model::state::StreamFrame;
+use crate::wire;
 
 /// Per axis: counts, position, distance, both velocities. Plus whether the
 /// link is still delivering, because everything above is only as true as that.
-#[utoipa::path(get, path = "/api/state", tag = "state",
-    responses((status = 200, body = RigState)))]
-pub async fn read_state(State(daemon): State<Arc<Daemon>>) -> Json<RigState> {
-    Json(daemon.device.state())
+pub async fn read_state(State(daemon): State<Arc<Daemon>>) -> Json<wire::RigState> {
+    Json(rig_state_to_wire(daemon.device.state()))
 }
 
 /// Move the API origin — never the accumulator a camera differences.
-#[utoipa::path(post, path = "/api/position/zero", tag = "state",
-    request_body = ZeroRequest, responses((status = 200, body = RigState)))]
 pub async fn zero_position(
     State(daemon): State<Arc<Daemon>>,
-    ApiJson(request): ApiJson<ZeroRequest>,
-) -> Json<RigState> {
+    ApiJson(request): ApiJson<wire::ZeroRequest>,
+) -> Json<wire::RigState> {
+    let request = zero_request_from_wire(request);
     daemon.device.zero(&request.axes);
-    Json(daemon.device.state())
+    Json(rig_state_to_wire(daemon.device.state()))
 }
 
 #[derive(serde::Deserialize)]
@@ -89,7 +88,7 @@ async fn follow_state(mut socket: WebSocket, daemon: Arc<Daemon>, rate_hz: f64) 
             }
         };
 
-        let Ok(text) = serde_json::to_string(&frame) else { continue };
+        let Ok(text) = serde_json::to_string(&stream_frame_to_wire(frame)) else { continue };
         if socket.send(Message::Text(text.into())).await.is_err() {
             return;
         }

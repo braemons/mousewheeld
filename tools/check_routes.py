@@ -12,8 +12,8 @@ nowhere, and an rpc whose route was never wired is a promise to a client that
 
 So this reads both sides and compares them:
 
-  * the axum router in `daemon/src/api/mod.rs`, which is the truth about what
-    is served;
+  * every `Router` under `daemon/src/api/`, which is the truth about what is
+    served — the main table in `mod.rs` and the ones merged into it;
   * the `option (braemons.v1.route)` on every rpc, which is the truth about
     what is promised.
 
@@ -34,15 +34,22 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent.parent
-ROUTER = HERE / "daemon" / "src" / "api" / "mod.rs"
+#: Every file under `api/`, not only the one holding the main router: elements
+#: and the proto files build their own `Router` and are merged in, and a route
+#: this check could not see is exactly the route it exists to catch.
+API_DIR = HERE / "daemon" / "src" / "api"
 PROTO_DIR = HERE / "proto" / "mousewheeld" / "v1"
 
-#: Served, and deliberately not API. The elements are a UI contract, not an
-#: interface; the OpenAPI document is generated and on its way out.
+#: Served, and deliberately not rpcs.
+#:
+#: The elements and the development page are a UI contract, not an interface.
+#: `/api/proto` serves the interface *files* — it is how the rpcs are read, so
+#: it cannot be one of them without describing itself.
 NOT_API = {
     ("GET", "/"),
     ("GET", "/elements/{}"),
-    ("GET", "/api/openapi.json"),
+    ("GET", "/api/proto"),
+    ("GET", "/api/proto/{}"),
 }
 
 #: A `.route("path", …)` call runs until the next one, which is what lets the
@@ -59,14 +66,15 @@ RPC_NAME = re.compile(r"\brpc\s+(\w+)\s*\(")
 
 
 def routes_the_router_serves() -> set[tuple[str, str]]:
-    text = ROUTER.read_text()
-    calls = list(ROUTE_CALL.finditer(text))
     found: set[tuple[str, str]] = set()
-    for index, match in enumerate(calls):
-        end = calls[index + 1].start() if index + 1 < len(calls) else len(text)
-        handlers = text[match.end() : end]
-        for verb in HANDLER_VERB.findall(handlers):
-            found.add((verb.upper(), normalise(match.group("path"))))
+    for source in sorted(API_DIR.glob("*.rs")):
+        text = source.read_text()
+        calls = list(ROUTE_CALL.finditer(text))
+        for index, match in enumerate(calls):
+            end = calls[index + 1].start() if index + 1 < len(calls) else len(text)
+            handlers = text[match.end() : end]
+            for verb in HANDLER_VERB.findall(handlers):
+                found.add((verb.upper(), normalise(match.group("path"))))
     return found
 
 

@@ -11,17 +11,17 @@ use axum::extract::State;
 use axum::Json;
 
 use crate::api::ApiJson;
+use crate::convert::config::{config_patch_from_wire, config_view_to_wire, line_map_to_wire};
 use crate::daemon_state::Daemon;
-use crate::model::config::{ConfigPatch, ConfigView};
+use crate::model::config::ConfigView;
 use crate::model::line_map::LineMap;
 use crate::model::{ApiError, ApiResult};
+use crate::wire;
 
-#[utoipa::path(get, path = "/api/config", tag = "config",
-    responses((status = 200, body = ConfigView)))]
-pub async fn read_config(State(daemon): State<Arc<Daemon>>) -> Json<ConfigView> {
+pub async fn read_config(State(daemon): State<Arc<Daemon>>) -> Json<wire::ConfigView> {
     let publishing = daemon.device.publishing();
     let config = daemon.config.lock().unwrap();
-    Json(ConfigView {
+    Json(config_view_to_wire(ConfigView {
         shm_open: publishing.is_some(),
         shm_writes: publishing.map(|(_, writes)| writes).unwrap_or(0),
         rate_hz: config.stream.rate_hz,
@@ -31,16 +31,14 @@ pub async fn read_config(State(daemon): State<Arc<Daemon>>) -> Json<ConfigView> 
         event_port: config.publish.event_port,
         port: config.device.port.clone(),
         starves_the_display: config.stream.starves_the_display(),
-    })
+    }))
 }
 
-#[utoipa::path(patch, path = "/api/config", tag = "config",
-    request_body = ConfigPatch,
-    responses((status = 200, body = ConfigView), (status = 422, description = "refused")))]
 pub async fn patch_config(
     State(daemon): State<Arc<Daemon>>,
-    ApiJson(patch): ApiJson<ConfigPatch>,
-) -> ApiResult<Json<ConfigView>> {
+    ApiJson(patch): ApiJson<wire::ConfigPatch>,
+) -> ApiResult<Json<wire::ConfigView>> {
+    let patch = config_patch_from_wire(patch);
     {
         let mut config = daemon.config.lock().unwrap();
         if let Some(rate_hz) = patch.rate_hz {
@@ -77,10 +75,8 @@ pub async fn patch_config(
 
 /// The output line map, as the rig config describes it. Not writable: see the
 /// module note.
-#[utoipa::path(get, path = "/api/lines", tag = "config",
-    responses((status = 200, body = LineMap)))]
-pub async fn read_lines(State(daemon): State<Arc<Daemon>>) -> Json<LineMap> {
-    Json(LineMap {
+pub async fn read_lines(State(daemon): State<Arc<Daemon>>) -> Json<wire::LineMap> {
+    Json(line_map_to_wire(LineMap {
         lines: daemon.config.lock().unwrap().lines.clone(),
-    })
+    }))
 }
