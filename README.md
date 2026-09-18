@@ -44,7 +44,8 @@ scan that sees the count, and put on a TTL line.
 | **The console panels** | `web/elements/` — five custom elements, no build step, served by this daemon at its own version |
 | **Publishing to vstimd** | `daemon/src/publish/` — the `vinput` segment, written first of everything a sample causes, in centimetres, through vstimd's own crate pinned at `v0.3.0-alpha1` |
 | **Packaging** | `packaging/` — nfpm, a systemd unit, a udev rule, sysusers |
-| **The API as a file** | [`docs/reference/openapi.json`](docs/reference/openapi.json) — generated from the types and committed, so the interface is something a pull request diffs. `make check` fails when the two disagree |
+| **The API** | [`docs/reference/api.md`](docs/reference/api.md), written by hand — what a route is for and what a refusal means. The machine-readable schema is served at `/api/openapi.json`, generated from the same types, so this document never repeats a field list |
+| **The zone set's schema** | [`docs/reference/zone-set.schema.json`](docs/reference/zone-set.schema.json) — JSON Schema 2020-12, extracted from those types and committed, because a zone set is a *file*: put its URL in a `"$schema"` line and an editor checks it as you type. `make check` fails when it drifts |
 | a board on a pty | `--simulate` — a simulator speaking the protocol on the far end of a real pty, so the daemon runs the link code it will run against a Teensy |
 
 **Not built:** the firmware, the real-time thread's scheduling discipline, the
@@ -56,7 +57,7 @@ without one.
 ```sh
 make dev          # a board simulator on a pty; panels at http://127.0.0.1:8082/
 make check        # build, clippy, tests
-make openapi      # regenerate docs/reference/openapi.json from the types
+make schema       # regenerate docs/reference/zone-set.schema.json from the types
 make package      # deb and rpm
 ```
 

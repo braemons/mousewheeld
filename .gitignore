@@ -2,3 +2,4 @@
 /dist
 # `make dev` puts a zone-set store here rather than in /var/lib.
 /dev/store
+/dist

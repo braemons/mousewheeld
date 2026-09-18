@@ -1,4 +1,5 @@
 {
+  "$schema": "/api/zone-sets/schema",
   "zone_set_version": 1,
   "zones": [
     {

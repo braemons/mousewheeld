@@ -75,9 +75,18 @@ impl utoipa::PartialSchema for ZoneBound {
             .item(ObjectBuilder::new().schema_type(Type::Number).description(Some(
                 "a distance in centimetres",
             )))
-            .item(ObjectBuilder::new().schema_type(Type::String).description(Some(
-                "\"$name\", resolved from the patch given at arm time",
-            )))
+            // The pattern is not decoration: without it the schema accepts
+            // `"200"`, which the deserializer below refuses — and a published
+            // schema looser than the code it describes is worse than none,
+            // because it is believed.
+            .item(
+                ObjectBuilder::new()
+                    .schema_type(Type::String)
+                    .pattern(Some("^\\$[A-Za-z0-9_]+$"))
+                    .description(Some(
+                        "\"$name\", resolved from the patch given at arm time",
+                    )),
+            )
             .item(ObjectBuilder::new().schema_type(Type::Null).description(Some(
                 "an open bound: everything past the other end",
             )))
@@ -175,6 +184,14 @@ pub struct Zone {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ZoneSet {
+    /// A URL for this set's JSON Schema, carried so an editor can validate the
+    /// file as somebody types it.
+    ///
+    /// It exists **because** unknown fields are refused: without a field for it
+    /// the one line that makes a hand-edited file checkable would itself be a
+    /// refusal. Accepted, preserved on write, and ignored by everything else.
+    #[serde(rename = "$schema", default, skip_serializing_if = "Option::is_none")]
+    pub schema_url: Option<String>,
     /// Bumped by whoever edits the set. The board reports the version it holds,
     /// so "is the board running what I think it is" is one comparison.
     pub zone_set_version: u32,

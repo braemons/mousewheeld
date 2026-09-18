@@ -1,0 +1,183 @@
+{
+  "$defs": {
+    "FireRule": {
+      "description": "What happens after a zone fires.",
+      "enum": [
+        "once",
+        "rearm"
+      ],
+      "type": "string"
+    },
+    "OutputAction": {
+      "description": "How the line behaves while the condition holds.",
+      "enum": [
+        "pulse",
+        "level"
+      ],
+      "type": "string"
+    },
+    "Zone": {
+      "additionalProperties": false,
+      "properties": {
+        "axes": {
+          "description": "The axes this zone constrains, in the order its bounds are given. One\nfor a wheel; a 2-D rectangle on a ball is already expressible.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "fire": {
+          "$ref": "#/$defs/FireRule"
+        },
+        "hysteresis_cm": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "level": {
+          "description": "Fire on arming if the animal is already inside. Off by default: a zone\nfires on the false\u2192true **edge** of \"inside\", so arming a zone somebody\nis standing in does not fire it.",
+          "type": "boolean"
+        },
+        "max_cm": {
+          "description": "The high end per axis. `null` is open.",
+          "items": {
+            "$ref": "#/$defs/ZoneBound"
+          },
+          "type": "array"
+        },
+        "metric": {
+          "$ref": "#/$defs/ZoneMetric"
+        },
+        "min_cm": {
+          "description": "The low end per axis, in the order of `axes`.",
+          "items": {
+            "$ref": "#/$defs/ZoneBound"
+          },
+          "type": "array"
+        },
+        "name": {
+          "type": "string"
+        },
+        "output": {
+          "$ref": "#/$defs/ZoneOutput"
+        },
+        "shape": {
+          "$ref": "#/$defs/ZoneShape"
+        },
+        "wrap_cm": {
+          "description": "A circular track: the metric is evaluated modulo this period.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "shape",
+        "axes",
+        "min_cm",
+        "max_cm",
+        "fire",
+        "output"
+      ],
+      "type": "object"
+    },
+    "ZoneBound": {
+      "description": "One end of a zone's interval on one axis.",
+      "oneOf": [
+        {
+          "description": "a distance in centimetres",
+          "type": "number"
+        },
+        {
+          "description": "\"$name\", resolved from the patch given at arm time",
+          "pattern": "^\\$[A-Za-z0-9_]+$",
+          "type": "string"
+        },
+        {
+          "description": "an open bound: everything past the other end",
+          "type": "null"
+        }
+      ]
+    },
+    "ZoneMetric": {
+      "description": "Which quantity a zone is compared against.",
+      "enum": [
+        "displacement",
+        "distance"
+      ],
+      "type": "string"
+    },
+    "ZoneOutput": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/OutputAction"
+        },
+        "line": {
+          "description": "A **name** from the rig config's line map, never a pin number.",
+          "type": "string"
+        },
+        "ms": {
+          "description": "Pulse width. Ignored by a `level` output.",
+          "format": "int32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "line",
+        "action"
+      ],
+      "type": "object"
+    },
+    "ZoneSet": {
+      "additionalProperties": false,
+      "description": "A named set, as it is stored and as it is uploaded.\n\nDeclaration order resolves two zones firing in one scan: both still fire,\nand the order is the order of their `zone_hit` messages.",
+      "properties": {
+        "$schema": {
+          "description": "A URL for this set's JSON Schema, carried so an editor can validate the\nfile as somebody types it.\n\nIt exists **because** unknown fields are refused: without a field for it\nthe one line that makes a hand-edited file checkable would itself be a\nrefusal. Accepted, preserved on write, and ignored by everything else.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "zone_set_version": {
+          "description": "Bumped by whoever edits the set. The board reports the version it holds,\nso \"is the board running what I think it is\" is one comparison.",
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "zones": {
+          "items": {
+            "$ref": "#/$defs/Zone"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "zone_set_version",
+        "zones"
+      ],
+      "type": "object"
+    },
+    "ZoneShape": {
+      "description": "The only shape today, and a discriminator rather than a flag: a future\n`circle` or `polygon` is a new value, and a shape the firmware does not know\nis refused whole rather than half-evaluated.",
+      "enum": [
+        "rect"
+      ],
+      "type": "string"
+    }
+  },
+  "$id": "https://braemons.org/mousewheeld/zone-set.schema.json",
+  "$ref": "#/$defs/ZoneSet",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "mousewheeld zone set"
+}

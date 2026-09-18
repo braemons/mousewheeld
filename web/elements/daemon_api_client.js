@@ -159,10 +159,24 @@ export class DaemonApiClient {
     return this.put(`/api/zone-sets/${encodeURIComponent(name)}`, zoneSet);
   }
 
-  /// Compile against the calibration and the board's capacities without
-  /// uploading, so a zone set can be wrong in an editor rather than at arm.
+  /// Compile the set as it is *stored* — "is that one still good after the
+  /// calibration changed".
   validateZoneSet(name) {
     return this.post(`/api/zone-sets/${encodeURIComponent(name)}/validate`);
+  }
+
+  /// Compile a **draft**: what somebody is typing, before it is saved.
+  ///
+  /// The body goes through the daemon's own deserializer and compiler, so what
+  /// comes back is the refusal the real thing would give — no second, looser
+  /// description of a zone set in a browser to disagree with it.
+  validateDraft(zoneSet) {
+    return this.post("/api/zone-sets/validate", zoneSet);
+  }
+
+  /// Where the zone set's JSON Schema lives, for an editor or a checker.
+  zoneSetSchemaUrl() {
+    return this.urlFor("/api/zone-sets/schema");
   }
 
   readArmedZones() {

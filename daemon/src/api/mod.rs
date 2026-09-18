@@ -15,6 +15,7 @@ pub mod config_routes;
 pub mod device_routes;
 pub mod elements;
 pub mod openapi;
+pub mod schema;
 pub mod state_routes;
 pub mod zone_routes;
 
@@ -80,6 +81,9 @@ pub fn router(daemon: Arc<Daemon>) -> Router {
         .route("/api/calibration/measure/finish", post(calibration_routes::finish_measurement))
         .route("/api/calibration/measure/apply", post(calibration_routes::apply_measurement))
         .route("/api/zone-sets", get(zone_routes::list_zone_sets))
+        // Before `/{name}`, or a set called "schema" would shadow it.
+        .route("/api/zone-sets/schema", get(schema::zone_set_schema))
+        .route("/api/zone-sets/validate", post(zone_routes::validate_body))
         .route(
             "/api/zone-sets/{name}",
             get(zone_routes::read_zone_set).put(zone_routes::replace_zone_set),

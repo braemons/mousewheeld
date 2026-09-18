@@ -62,6 +62,8 @@ use crate::model::zone_set::{
         super::zone_routes::read_zone_set,
         super::zone_routes::replace_zone_set,
         super::zone_routes::validate_zone_set,
+        super::zone_routes::validate_body,
+        super::schema::zone_set_schema,
         super::zone_routes::read_armed,
         super::zone_routes::arm,
         super::zone_routes::disarm,

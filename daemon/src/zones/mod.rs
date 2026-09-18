@@ -329,7 +329,7 @@ mod tests {
     }
 
     fn set(zone: Zone) -> ZoneSet {
-        ZoneSet { zone_set_version: 1, zones: vec![zone] }
+        ZoneSet { schema_url: None, zone_set_version: 1, zones: vec![zone] }
     }
 
     #[test]
