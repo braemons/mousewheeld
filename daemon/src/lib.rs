@@ -9,13 +9,15 @@
 //! The module order is the daemon's own shape: the board at the bottom, the
 //! interface at the top, and `convert/` the seam between the two.
 
-pub mod api;
 pub mod convert;
+pub mod file_schema;
+pub mod file_schema_types;
 pub mod daemon_state;
 pub mod device;
-pub mod grpc_spike;
+pub mod grpc;
 pub mod link;
 pub mod model;
 pub mod publish;
+pub mod web;
 pub mod wire;
 pub mod zones;

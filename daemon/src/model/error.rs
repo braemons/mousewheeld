@@ -2,11 +2,15 @@
 //!
 //! `{error, detail, context}` — a machine-readable code, a sentence, and the
 //! thing to change. The third field is the one that earns its keep: a zone set
-//! that does not fit names what overflowed, and a UI that can only render
-//! "409" throws exactly that away. Both clients read all three.
+//! that does not fit names what overflowed, and a UI that can only render a
+//! status code throws exactly that away.
+//!
+//! **This is the daemon's vocabulary, not the wire's.** `grpc::status_of` is
+//! the single place it becomes a `tonic::Status`, and the `StatusCode` kept
+//! here is how a refusal says which *kind* it is — it is a category, and that
+//! it is spelled as an HTTP code is an accident of where this type grew up.
 
 use axum::http::StatusCode;
-use axum::response::{IntoResponse, Response};
 use serde::Serialize;
 use utoipa::ToSchema;
 
@@ -82,19 +86,6 @@ impl ApiError {
     /// Something the daemon owns went wrong — a store it could not write.
     pub fn internal(error: &str, detail: impl Into<String>) -> Self {
         Self::new(StatusCode::INTERNAL_SERVER_ERROR, error, detail)
-    }
-}
-
-impl IntoResponse for ApiError {
-    /// Through `convert`, like every other answer.
-    ///
-    /// The two shapes happen to be identical today, which is exactly why this
-    /// is worth doing rather than serialising `self.body` directly: the moment
-    /// they are not, a refusal would be the one response on this API that had
-    /// quietly kept its own spelling.
-    fn into_response(self) -> Response {
-        let body = crate::convert::error::error_to_wire(self.body);
-        (self.status, axum::Json(body)).into_response()
     }
 }
 

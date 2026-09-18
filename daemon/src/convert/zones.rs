@@ -36,7 +36,7 @@ fn zone_to_wire(zone: m::Zone) -> wire::Zone {
     wire::Zone {
         name: zone.name,
         shape: match zone.shape {
-            m::ZoneShape::Rect => wire::ZoneShape::ZoneShapeRect,
+            m::ZoneShape::Rect => wire::ZoneShape::Rect,
         } as i32,
         axes: zone.axes,
         metric: metric_to_wire(zone.metric) as i32,
@@ -44,16 +44,16 @@ fn zone_to_wire(zone: m::Zone) -> wire::Zone {
         max_cm: zone.max_cm.into_iter().map(bound_to_wire).collect(),
         wrap_cm: zone.wrap_cm,
         fire: match zone.fire {
-            m::FireRule::Once => wire::FireRule::FireRuleOnce,
-            m::FireRule::Rearm => wire::FireRule::FireRuleRearm,
+            m::FireRule::Once => wire::FireRule::Once,
+            m::FireRule::Rearm => wire::FireRule::Rearm,
         } as i32,
         hysteresis_cm: zone.hysteresis_cm,
         level: zone.level,
         output: Some(wire::ZoneOutput {
             line: zone.output.line,
             action: match zone.output.action {
-                m::OutputAction::Pulse => wire::OutputAction::OutputActionPulse,
-                m::OutputAction::Level => wire::OutputAction::OutputActionLevel,
+                m::OutputAction::Pulse => wire::OutputAction::Pulse,
+                m::OutputAction::Level => wire::OutputAction::Level,
             } as i32,
             ms: zone.output.ms,
         }),
@@ -74,8 +74,8 @@ fn bound_to_wire(bound: m::ZoneBound) -> wire::ZoneBound {
 
 fn metric_to_wire(metric: m::ZoneMetric) -> wire::ZoneMetric {
     match metric {
-        m::ZoneMetric::Displacement => wire::ZoneMetric::ZoneMetricDisplacement,
-        m::ZoneMetric::Distance => wire::ZoneMetric::ZoneMetricDistance,
+        m::ZoneMetric::Displacement => wire::ZoneMetric::Displacement,
+        m::ZoneMetric::Distance => wire::ZoneMetric::Distance,
     }
 }
 
@@ -144,7 +144,7 @@ fn zone_from_wire(zone: wire::Zone) -> Result<m::Zone, Refusal> {
         .ok_or_else(|| format!("zone {name:?} has no output"))?;
     Ok(m::Zone {
         shape: match wire::ZoneShape::try_from(zone.shape) {
-            Ok(wire::ZoneShape::ZoneShapeRect) => m::ZoneShape::Rect,
+            Ok(wire::ZoneShape::Rect) => m::ZoneShape::Rect,
             // Unspecified is the omitted case and the unknown case both, and
             // neither may become `Rect` by default: a shape the firmware does
             // not know is refused whole rather than half-evaluated.
@@ -152,14 +152,14 @@ fn zone_from_wire(zone: wire::Zone) -> Result<m::Zone, Refusal> {
         },
         metric: match wire::ZoneMetric::try_from(zone.metric) {
             // Omitted means displacement, which is what a corridor is.
-            Ok(wire::ZoneMetric::ZoneMetricUnspecified) => m::ZoneMetric::Displacement,
-            Ok(wire::ZoneMetric::ZoneMetricDisplacement) => m::ZoneMetric::Displacement,
-            Ok(wire::ZoneMetric::ZoneMetricDistance) => m::ZoneMetric::Distance,
+            Ok(wire::ZoneMetric::Unspecified) => m::ZoneMetric::Displacement,
+            Ok(wire::ZoneMetric::Displacement) => m::ZoneMetric::Displacement,
+            Ok(wire::ZoneMetric::Distance) => m::ZoneMetric::Distance,
             Err(_) => return Err(format!("zone {name:?} has a metric this daemon does not know")),
         },
         fire: match wire::FireRule::try_from(zone.fire) {
-            Ok(wire::FireRule::FireRuleOnce) => m::FireRule::Once,
-            Ok(wire::FireRule::FireRuleRearm) => m::FireRule::Rearm,
+            Ok(wire::FireRule::Once) => m::FireRule::Once,
+            Ok(wire::FireRule::Rearm) => m::FireRule::Rearm,
             _ => return Err(format!("zone {name:?} must say fire: once or rearm")),
         },
         min_cm: zone.min_cm.into_iter().map(bound_from_wire).collect(),
@@ -170,8 +170,8 @@ fn zone_from_wire(zone: wire::Zone) -> Result<m::Zone, Refusal> {
         level: zone.level,
         output: m::ZoneOutput {
             action: match wire::OutputAction::try_from(output.action) {
-                Ok(wire::OutputAction::OutputActionPulse) => m::OutputAction::Pulse,
-                Ok(wire::OutputAction::OutputActionLevel) => m::OutputAction::Level,
+                Ok(wire::OutputAction::Pulse) => m::OutputAction::Pulse,
+                Ok(wire::OutputAction::Level) => m::OutputAction::Level,
                 _ => return Err(format!("zone {name:?} must say action: pulse or level")),
             },
             line: output.line,
@@ -196,9 +196,9 @@ pub fn arm_request_from_wire(request: wire::ArmRequest) -> Result<m::ArmRequest,
         origin: match wire::ArmOrigin::try_from(request.origin) {
             // Omitted means current, which is what a trial wants and what a
             // caller who never thought about the origin should get.
-            Ok(wire::ArmOrigin::ArmOriginUnspecified) => m::ArmOrigin::Current,
-            Ok(wire::ArmOrigin::ArmOriginCurrent) => m::ArmOrigin::Current,
-            Ok(wire::ArmOrigin::ArmOriginAbsolute) => m::ArmOrigin::Absolute,
+            Ok(wire::ArmOrigin::Unspecified) => m::ArmOrigin::Current,
+            Ok(wire::ArmOrigin::Current) => m::ArmOrigin::Current,
+            Ok(wire::ArmOrigin::Absolute) => m::ArmOrigin::Absolute,
             Err(_) => return Err("origin must be current or absolute".to_string()),
         },
         label: request.label,

@@ -3,8 +3,6 @@ syntax = "proto3";
 
 package mousewheeld.v1;
 
-import "braemons/v1/route.proto";
-import "google/protobuf/empty.proto";
 import "google/protobuf/struct.proto";
 import "mousewheeld/v1/device.proto";
 
@@ -21,42 +19,24 @@ import "mousewheeld/v1/device.proto";
 // sets stale.
 service Zones {
   // The names in the store.
-  rpc ListZoneSets(google.protobuf.Empty) returns (ZoneSetNames) {
-    option (braemons.v1.route) = { method: "GET", path: "/api/zone-sets" };
-  }
+  rpc ListZoneSets(ListZoneSetsRequest) returns (ZoneSetNames);
 
   // One stored set, exactly as it is on disk.
-  rpc ReadZoneSet(ZoneSetName) returns (ZoneSet) {
-    option (braemons.v1.route) = { method: "GET", path: "/api/zone-sets/{name}" };
-  }
+  rpc ReadZoneSet(ZoneSetName) returns (ZoneSet);
 
   // Store a set. Refused if it does not parse or does not compile.
-  rpc ReplaceZoneSet(WriteZoneSet) returns (ZoneSet) {
-    option (braemons.v1.route) = {
-      method: "PUT",
-      path: "/api/zone-sets/{name}",
-      body: "zone_set"
-    };
-  }
+  rpc ReplaceZoneSet(WriteZoneSet) returns (ZoneSet);
 
   // Compile a **draft** — what somebody is typing, before it is saved.
   //
   // The body goes through the daemon's own deserializer and compiler, so what
   // comes back is the refusal the real thing would give. There is no second,
   // looser description of a zone set in a browser to disagree with it.
-  rpc ValidateDraft(ZoneSet) returns (ValidationReport) {
-    option (braemons.v1.route) = {
-      method: "POST",
-      path: "/api/zone-sets/validate",
-      body: "*"
-    };
-  }
+  rpc ValidateDraft(ZoneSet) returns (ValidationReport);
 
   // Compile the set as it is **stored** — "is that one still good after the
   // calibration changed".
-  rpc ValidateZoneSet(ZoneSetName) returns (ValidationReport) {
-    option (braemons.v1.route) = { method: "POST", path: "/api/zone-sets/{name}/validate" };
-  }
+  rpc ValidateZoneSet(ZoneSetName) returns (ValidationReport);
 
   // The JSON Schema of a zone set **file**, for an editor or a checker.
   //
@@ -68,14 +48,10 @@ service Zones {
   // Committed in this repository as well, at
   // `docs/reference/zone-set.schema.json`, because an editor and CI must reach
   // it without a daemon running.
-  rpc ReadZoneSetSchema(google.protobuf.Empty) returns (google.protobuf.Struct) {
-    option (braemons.v1.route) = { method: "GET", path: "/api/zone-sets/schema" };
-  }
+  rpc ReadZoneSetSchema(ReadZoneSetSchemaRequest) returns (google.protobuf.Struct);
 
   // What is armed, what fired, and where.
-  rpc ReadArmed(google.protobuf.Empty) returns (ArmedZones) {
-    option (braemons.v1.route) = { method: "GET", path: "/api/zones" };
-  }
+  rpc ReadArmed(ReadArmedRequest) returns (ArmedZones);
 
   // Resolve the patch, compile against the calibration in force, upload, and
   // wait for the board to answer `armed`.
@@ -83,19 +59,13 @@ service Zones {
   // Refuses when the set does not fit, naming what overflowed; refuses a
   // `$name` the patch does not carry, naming the name. Never a default — a
   // goal distance that silently became zero is a trial that looks like it ran.
-  rpc Arm(ArmRequest) returns (ArmedZones) {
-    option (braemons.v1.route) = { method: "POST", path: "/api/zones/arm", body: "*" };
-  }
+  rpc Arm(ArmRequest) returns (ArmedZones);
 
-  rpc Disarm(google.protobuf.Empty) returns (ArmedZones) {
-    option (braemons.v1.route) = { method: "POST", path: "/api/zones/disarm" };
-  }
+  rpc Disarm(DisarmRequest) returns (ArmedZones);
 
   // Write what is armed to the board's flash, so a standalone rig comes up
   // with its zones. Refuses `nothing_armed`.
-  rpc SaveToFlash(google.protobuf.Empty) returns (DeviceInfo) {
-    option (braemons.v1.route) = { method: "POST", path: "/api/zones/save" };
-  }
+  rpc SaveToFlash(SaveToFlashRequest) returns (DeviceInfo);
 }
 
 message ZoneSetNames {
@@ -334,3 +304,20 @@ message ValidationReport {
   // The `$name`s this set still needs at arm time.
   repeated string references = 5;
 }
+
+// Each rpc has its own request message, even where it carries nothing today.
+//
+// `google.protobuf.Empty` would say the same thing and close the door: a field
+// cannot be added to it later, so an rpc that grows an argument would need a
+// new rpc. `contracts/INTERACTIONS.md` §11 promises additive change within a
+// major version, and this is what keeps that promise available.
+
+message ListZoneSetsRequest {}
+
+message ReadZoneSetSchemaRequest {}
+
+message ReadArmedRequest {}
+
+message DisarmRequest {}
+
+message SaveToFlashRequest {}

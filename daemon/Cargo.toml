@@ -28,9 +28,7 @@ rust-embed = "8"
 # The generated wire types and their JSON mapping. Runtime only: the generators
 # live in tools/protogen, outside the workspace, and run from `make proto`.
 prost = "0.14"
-pbjson = "0.9"
-pbjson-types = "0.9"
-# The gRPC spike.
+prost-types = "0.14"
 tonic = "0.14"
 tonic-prost = "0.14"
 tonic-web = "0.14"

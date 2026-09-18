@@ -130,6 +130,14 @@ pub struct MeasurementApplied {
     #[prost(bool, tag = "3")]
     pub zone_sets_invalidated: bool,
 }
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ReadCalibrationRequest {}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ReadBallRequest {}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct FinishMeasuringRequest {}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ApplyMeasurementRequest {}
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ConfigView {
     /// What the device is asked to send. Cumulative counts, so a lower rate costs
@@ -198,6 +206,10 @@ pub struct OutputLine {
     #[prost(bool, tag = "4")]
     pub safe_high: bool,
 }
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ReadConfigRequest {}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ReadLinesRequest {}
 /// What this daemon is, and what it speaks.
 ///
 /// A console shows three daemons' panels beside each other and needs to know
@@ -332,14 +344,26 @@ pub struct FirmwareVersions {
     #[prost(string, repeated, tag = "2")]
     pub available: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ReadVersionRequest {}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ReadDeviceRequest {}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct OpenLinkRequest {}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ReadFirmwareRequest {}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ReadWireLogRequest {}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WatchWireRequest {}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum WireDirection {
-    WireDirectionUnspecified = 0,
+    Unspecified = 0,
     /// daemon → board
-    WireDirectionOut = 1,
+    Out = 1,
     /// board → daemon
-    WireDirectionIn = 2,
+    In = 2,
 }
 impl WireDirection {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -348,17 +372,17 @@ impl WireDirection {
     /// (if the ProtoBuf definition does not change) and safe for programmatic use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
-            Self::WireDirectionUnspecified => "WIRE_DIRECTION_UNSPECIFIED",
-            Self::WireDirectionOut => "WIRE_DIRECTION_OUT",
-            Self::WireDirectionIn => "WIRE_DIRECTION_IN",
+            Self::Unspecified => "WIRE_DIRECTION_UNSPECIFIED",
+            Self::Out => "WIRE_DIRECTION_OUT",
+            Self::In => "WIRE_DIRECTION_IN",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
-            "WIRE_DIRECTION_UNSPECIFIED" => Some(Self::WireDirectionUnspecified),
-            "WIRE_DIRECTION_OUT" => Some(Self::WireDirectionOut),
-            "WIRE_DIRECTION_IN" => Some(Self::WireDirectionIn),
+            "WIRE_DIRECTION_UNSPECIFIED" => Some(Self::Unspecified),
+            "WIRE_DIRECTION_OUT" => Some(Self::Out),
+            "WIRE_DIRECTION_IN" => Some(Self::In),
             _ => None,
         }
     }
@@ -366,10 +390,10 @@ impl WireDirection {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum WireLevel {
-    WireLevelUnspecified = 0,
-    WireLevelInfo = 1,
+    Unspecified = 0,
+    Info = 1,
     /// A line the board refused, or one that failed its CRC.
-    WireLevelError = 2,
+    Error = 2,
 }
 impl WireLevel {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -378,17 +402,17 @@ impl WireLevel {
     /// (if the ProtoBuf definition does not change) and safe for programmatic use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
-            Self::WireLevelUnspecified => "WIRE_LEVEL_UNSPECIFIED",
-            Self::WireLevelInfo => "WIRE_LEVEL_INFO",
-            Self::WireLevelError => "WIRE_LEVEL_ERROR",
+            Self::Unspecified => "WIRE_LEVEL_UNSPECIFIED",
+            Self::Info => "WIRE_LEVEL_INFO",
+            Self::Error => "WIRE_LEVEL_ERROR",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
-            "WIRE_LEVEL_UNSPECIFIED" => Some(Self::WireLevelUnspecified),
-            "WIRE_LEVEL_INFO" => Some(Self::WireLevelInfo),
-            "WIRE_LEVEL_ERROR" => Some(Self::WireLevelError),
+            "WIRE_LEVEL_UNSPECIFIED" => Some(Self::Unspecified),
+            "WIRE_LEVEL_INFO" => Some(Self::Info),
+            "WIRE_LEVEL_ERROR" => Some(Self::Error),
             _ => None,
         }
     }
@@ -546,6 +570,8 @@ pub struct ZoneHitEvent {
     #[prost(double, tag = "5")]
     pub position_cm: f64,
 }
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ReadStateRequest {}
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ZoneSetNames {
     #[prost(string, repeated, tag = "1")]
@@ -767,14 +793,24 @@ pub struct ValidationReport {
     #[prost(string, repeated, tag = "5")]
     pub references: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ListZoneSetsRequest {}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ReadZoneSetSchemaRequest {}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ReadArmedRequest {}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DisarmRequest {}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SaveToFlashRequest {}
 /// The only shape today, and a discriminator rather than a flag: a future
 /// `circle` or `polygon` is a new value, and a shape the firmware does not know
 /// is refused whole rather than half-evaluated.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum ZoneShape {
-    ZoneShapeUnspecified = 0,
-    ZoneShapeRect = 1,
+    Unspecified = 0,
+    Rect = 1,
 }
 impl ZoneShape {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -783,15 +819,15 @@ impl ZoneShape {
     /// (if the ProtoBuf definition does not change) and safe for programmatic use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
-            Self::ZoneShapeUnspecified => "ZONE_SHAPE_UNSPECIFIED",
-            Self::ZoneShapeRect => "ZONE_SHAPE_RECT",
+            Self::Unspecified => "ZONE_SHAPE_UNSPECIFIED",
+            Self::Rect => "ZONE_SHAPE_RECT",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
-            "ZONE_SHAPE_UNSPECIFIED" => Some(Self::ZoneShapeUnspecified),
-            "ZONE_SHAPE_RECT" => Some(Self::ZoneShapeRect),
+            "ZONE_SHAPE_UNSPECIFIED" => Some(Self::Unspecified),
+            "ZONE_SHAPE_RECT" => Some(Self::Rect),
             _ => None,
         }
     }
@@ -802,11 +838,11 @@ impl ZoneShape {
 pub enum ZoneMetric {
     /// Omitted. Treated as `DISPLACEMENT`, because a corridor is what a wheel
     /// usually drives.
-    ZoneMetricUnspecified = 0,
+    Unspecified = 0,
     /// Signed, `counts − origin`. What a corridor position is.
-    ZoneMetricDisplacement = 1,
+    Displacement = 1,
     /// Direction-free odometer, `Σ |Δcounts|`. What "how much did it run" is.
-    ZoneMetricDistance = 2,
+    Distance = 2,
 }
 impl ZoneMetric {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -815,17 +851,17 @@ impl ZoneMetric {
     /// (if the ProtoBuf definition does not change) and safe for programmatic use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
-            Self::ZoneMetricUnspecified => "ZONE_METRIC_UNSPECIFIED",
-            Self::ZoneMetricDisplacement => "ZONE_METRIC_DISPLACEMENT",
-            Self::ZoneMetricDistance => "ZONE_METRIC_DISTANCE",
+            Self::Unspecified => "ZONE_METRIC_UNSPECIFIED",
+            Self::Displacement => "ZONE_METRIC_DISPLACEMENT",
+            Self::Distance => "ZONE_METRIC_DISTANCE",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
-            "ZONE_METRIC_UNSPECIFIED" => Some(Self::ZoneMetricUnspecified),
-            "ZONE_METRIC_DISPLACEMENT" => Some(Self::ZoneMetricDisplacement),
-            "ZONE_METRIC_DISTANCE" => Some(Self::ZoneMetricDistance),
+            "ZONE_METRIC_UNSPECIFIED" => Some(Self::Unspecified),
+            "ZONE_METRIC_DISPLACEMENT" => Some(Self::Displacement),
+            "ZONE_METRIC_DISTANCE" => Some(Self::Distance),
             _ => None,
         }
     }
@@ -834,12 +870,12 @@ impl ZoneMetric {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum FireRule {
-    FireRuleUnspecified = 0,
+    Unspecified = 0,
     /// Disarm after firing.
-    FireRuleOnce = 1,
+    Once = 1,
     /// Re-arm once the position has left the zone by `hysteresis_cm`, so encoder
     /// jitter at a boundary is not a pulse train.
-    FireRuleRearm = 2,
+    Rearm = 2,
 }
 impl FireRule {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -848,17 +884,17 @@ impl FireRule {
     /// (if the ProtoBuf definition does not change) and safe for programmatic use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
-            Self::FireRuleUnspecified => "FIRE_RULE_UNSPECIFIED",
-            Self::FireRuleOnce => "FIRE_RULE_ONCE",
-            Self::FireRuleRearm => "FIRE_RULE_REARM",
+            Self::Unspecified => "FIRE_RULE_UNSPECIFIED",
+            Self::Once => "FIRE_RULE_ONCE",
+            Self::Rearm => "FIRE_RULE_REARM",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
-            "FIRE_RULE_UNSPECIFIED" => Some(Self::FireRuleUnspecified),
-            "FIRE_RULE_ONCE" => Some(Self::FireRuleOnce),
-            "FIRE_RULE_REARM" => Some(Self::FireRuleRearm),
+            "FIRE_RULE_UNSPECIFIED" => Some(Self::Unspecified),
+            "FIRE_RULE_ONCE" => Some(Self::Once),
+            "FIRE_RULE_REARM" => Some(Self::Rearm),
             _ => None,
         }
     }
@@ -867,11 +903,11 @@ impl FireRule {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum OutputAction {
-    OutputActionUnspecified = 0,
+    Unspecified = 0,
     /// High for at most `ms`.
-    OutputActionPulse = 1,
+    Pulse = 1,
     /// High while inside, with the same hysteresis.
-    OutputActionLevel = 2,
+    Level = 2,
 }
 impl OutputAction {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -880,17 +916,17 @@ impl OutputAction {
     /// (if the ProtoBuf definition does not change) and safe for programmatic use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
-            Self::OutputActionUnspecified => "OUTPUT_ACTION_UNSPECIFIED",
-            Self::OutputActionPulse => "OUTPUT_ACTION_PULSE",
-            Self::OutputActionLevel => "OUTPUT_ACTION_LEVEL",
+            Self::Unspecified => "OUTPUT_ACTION_UNSPECIFIED",
+            Self::Pulse => "OUTPUT_ACTION_PULSE",
+            Self::Level => "OUTPUT_ACTION_LEVEL",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
-            "OUTPUT_ACTION_UNSPECIFIED" => Some(Self::OutputActionUnspecified),
-            "OUTPUT_ACTION_PULSE" => Some(Self::OutputActionPulse),
-            "OUTPUT_ACTION_LEVEL" => Some(Self::OutputActionLevel),
+            "OUTPUT_ACTION_UNSPECIFIED" => Some(Self::Unspecified),
+            "OUTPUT_ACTION_PULSE" => Some(Self::Pulse),
+            "OUTPUT_ACTION_LEVEL" => Some(Self::Level),
             _ => None,
         }
     }
@@ -901,11 +937,11 @@ impl OutputAction {
 pub enum ArmOrigin {
     /// Omitted. Treated as `CURRENT`, which is what a trial wants and what every
     /// caller that does not think about it should get.
-    ArmOriginUnspecified = 0,
+    Unspecified = 0,
     /// Displacement and distance are zero at the arm point.
-    ArmOriginCurrent = 1,
+    Current = 1,
     /// Keep the device origin.
-    ArmOriginAbsolute = 2,
+    Absolute = 2,
 }
 impl ArmOrigin {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -914,17 +950,17 @@ impl ArmOrigin {
     /// (if the ProtoBuf definition does not change) and safe for programmatic use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
-            Self::ArmOriginUnspecified => "ARM_ORIGIN_UNSPECIFIED",
-            Self::ArmOriginCurrent => "ARM_ORIGIN_CURRENT",
-            Self::ArmOriginAbsolute => "ARM_ORIGIN_ABSOLUTE",
+            Self::Unspecified => "ARM_ORIGIN_UNSPECIFIED",
+            Self::Current => "ARM_ORIGIN_CURRENT",
+            Self::Absolute => "ARM_ORIGIN_ABSOLUTE",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
-            "ARM_ORIGIN_UNSPECIFIED" => Some(Self::ArmOriginUnspecified),
-            "ARM_ORIGIN_CURRENT" => Some(Self::ArmOriginCurrent),
-            "ARM_ORIGIN_ABSOLUTE" => Some(Self::ArmOriginAbsolute),
+            "ARM_ORIGIN_UNSPECIFIED" => Some(Self::Unspecified),
+            "ARM_ORIGIN_CURRENT" => Some(Self::Current),
+            "ARM_ORIGIN_ABSOLUTE" => Some(Self::Absolute),
             _ => None,
         }
     }

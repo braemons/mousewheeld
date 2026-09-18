@@ -14,7 +14,7 @@ pub mod calibration_server {
     pub trait Calibration: std::marker::Send + std::marker::Sync + 'static {
         async fn read_calibration(
             &self,
-            request: tonic::Request<::pbjson_types::Empty>,
+            request: tonic::Request<crate::wire::ReadCalibrationRequest>,
         ) -> std::result::Result<
             tonic::Response<crate::wire::CalibrationState>,
             tonic::Status,
@@ -33,7 +33,7 @@ pub mod calibration_server {
         /// adding it is filling in rather than redesigning.
         async fn read_ball(
             &self,
-            request: tonic::Request<::pbjson_types::Empty>,
+            request: tonic::Request<crate::wire::ReadBallRequest>,
         ) -> std::result::Result<
             tonic::Response<crate::wire::BallCalibration>,
             tonic::Status,
@@ -62,7 +62,7 @@ pub mod calibration_server {
         /// Nothing is changed by this call.
         async fn finish_measuring(
             &self,
-            request: tonic::Request<::pbjson_types::Empty>,
+            request: tonic::Request<crate::wire::FinishMeasuringRequest>,
         ) -> std::result::Result<
             tonic::Response<crate::wire::MeasurementResult>,
             tonic::Status,
@@ -74,7 +74,7 @@ pub mod calibration_server {
         /// silently reinterpreted under another.
         async fn apply_measurement(
             &self,
-            request: tonic::Request<::pbjson_types::Empty>,
+            request: tonic::Request<crate::wire::ApplyMeasurementRequest>,
         ) -> std::result::Result<
             tonic::Response<crate::wire::MeasurementApplied>,
             tonic::Status,
@@ -167,7 +167,7 @@ pub mod calibration_server {
                     struct ReadCalibrationSvc<T: Calibration>(pub Arc<T>);
                     impl<
                         T: Calibration,
-                    > tonic::server::UnaryService<::pbjson_types::Empty>
+                    > tonic::server::UnaryService<crate::wire::ReadCalibrationRequest>
                     for ReadCalibrationSvc<T> {
                         type Response = crate::wire::CalibrationState;
                         type Future = BoxFuture<
@@ -176,7 +176,7 @@ pub mod calibration_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<::pbjson_types::Empty>,
+                            request: tonic::Request<crate::wire::ReadCalibrationRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -258,7 +258,7 @@ pub mod calibration_server {
                     struct ReadBallSvc<T: Calibration>(pub Arc<T>);
                     impl<
                         T: Calibration,
-                    > tonic::server::UnaryService<::pbjson_types::Empty>
+                    > tonic::server::UnaryService<crate::wire::ReadBallRequest>
                     for ReadBallSvc<T> {
                         type Response = crate::wire::BallCalibration;
                         type Future = BoxFuture<
@@ -267,7 +267,7 @@ pub mod calibration_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<::pbjson_types::Empty>,
+                            request: tonic::Request<crate::wire::ReadBallRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -393,7 +393,7 @@ pub mod calibration_server {
                     struct FinishMeasuringSvc<T: Calibration>(pub Arc<T>);
                     impl<
                         T: Calibration,
-                    > tonic::server::UnaryService<::pbjson_types::Empty>
+                    > tonic::server::UnaryService<crate::wire::FinishMeasuringRequest>
                     for FinishMeasuringSvc<T> {
                         type Response = crate::wire::MeasurementResult;
                         type Future = BoxFuture<
@@ -402,7 +402,7 @@ pub mod calibration_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<::pbjson_types::Empty>,
+                            request: tonic::Request<crate::wire::FinishMeasuringRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -438,7 +438,7 @@ pub mod calibration_server {
                     struct ApplyMeasurementSvc<T: Calibration>(pub Arc<T>);
                     impl<
                         T: Calibration,
-                    > tonic::server::UnaryService<::pbjson_types::Empty>
+                    > tonic::server::UnaryService<crate::wire::ApplyMeasurementRequest>
                     for ApplyMeasurementSvc<T> {
                         type Response = crate::wire::MeasurementApplied;
                         type Future = BoxFuture<
@@ -447,7 +447,7 @@ pub mod calibration_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<::pbjson_types::Empty>,
+                            request: tonic::Request<crate::wire::ApplyMeasurementRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -535,7 +535,7 @@ pub mod config_server {
         /// answer.
         async fn read_config(
             &self,
-            request: tonic::Request<::pbjson_types::Empty>,
+            request: tonic::Request<crate::wire::ReadConfigRequest>,
         ) -> std::result::Result<
             tonic::Response<crate::wire::ConfigView>,
             tonic::Status,
@@ -555,7 +555,7 @@ pub mod config_server {
         /// statemachined draws between its graphs and its line map.
         async fn read_lines(
             &self,
-            request: tonic::Request<::pbjson_types::Empty>,
+            request: tonic::Request<crate::wire::ReadLinesRequest>,
         ) -> std::result::Result<tonic::Response<crate::wire::LineMap>, tonic::Status>;
     }
     /// Rates, and the line map.
@@ -643,7 +643,9 @@ pub mod config_server {
                 "/mousewheeld.v1.Config/ReadConfig" => {
                     #[allow(non_camel_case_types)]
                     struct ReadConfigSvc<T: Config>(pub Arc<T>);
-                    impl<T: Config> tonic::server::UnaryService<::pbjson_types::Empty>
+                    impl<
+                        T: Config,
+                    > tonic::server::UnaryService<crate::wire::ReadConfigRequest>
                     for ReadConfigSvc<T> {
                         type Response = crate::wire::ConfigView;
                         type Future = BoxFuture<
@@ -652,7 +654,7 @@ pub mod config_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<::pbjson_types::Empty>,
+                            request: tonic::Request<crate::wire::ReadConfigRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -729,7 +731,9 @@ pub mod config_server {
                 "/mousewheeld.v1.Config/ReadLines" => {
                     #[allow(non_camel_case_types)]
                     struct ReadLinesSvc<T: Config>(pub Arc<T>);
-                    impl<T: Config> tonic::server::UnaryService<::pbjson_types::Empty>
+                    impl<
+                        T: Config,
+                    > tonic::server::UnaryService<crate::wire::ReadLinesRequest>
                     for ReadLinesSvc<T> {
                         type Response = crate::wire::LineMap;
                         type Future = BoxFuture<
@@ -738,7 +742,7 @@ pub mod config_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<::pbjson_types::Empty>,
+                            request: tonic::Request<crate::wire::ReadLinesRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -825,7 +829,7 @@ pub mod device_server {
         /// What this daemon is and what it speaks. Answers without a board.
         async fn read_version(
             &self,
-            request: tonic::Request<::pbjson_types::Empty>,
+            request: tonic::Request<crate::wire::ReadVersionRequest>,
         ) -> std::result::Result<
             tonic::Response<crate::wire::VersionReport>,
             tonic::Status,
@@ -833,20 +837,23 @@ pub mod device_server {
         /// Whether a board is attached, which one, and how the link is holding up.
         async fn read_device(
             &self,
-            request: tonic::Request<::pbjson_types::Empty>,
+            request: tonic::Request<crate::wire::ReadDeviceRequest>,
         ) -> std::result::Result<
             tonic::Response<crate::wire::DeviceInfo>,
             tonic::Status,
         >;
         /// Open the serial port named in the rig config and greet the board.
         ///
+        /// Named `OpenLink` and not `Connect` because a generated client already has
+        /// a `connect` — the one that opens the channel — and the two collide.
+        ///
         /// Idempotent: connecting a connected daemon answers with what is already
         /// there. Refuses `no_device` when the port is not openable, and refuses a
         /// board whose protocol is below the floor **by name**, rather than speaking
         /// to it half-understood.
-        async fn connect(
+        async fn open_link(
             &self,
-            request: tonic::Request<::pbjson_types::Empty>,
+            request: tonic::Request<crate::wire::OpenLinkRequest>,
         ) -> std::result::Result<
             tonic::Response<crate::wire::DeviceInfo>,
             tonic::Status,
@@ -854,7 +861,7 @@ pub mod device_server {
         /// What the board is running, and what this daemon could flash onto it.
         async fn read_firmware(
             &self,
-            request: tonic::Request<::pbjson_types::Empty>,
+            request: tonic::Request<crate::wire::ReadFirmwareRequest>,
         ) -> std::result::Result<
             tonic::Response<crate::wire::FirmwareVersions>,
             tonic::Status,
@@ -866,7 +873,7 @@ pub mod device_server {
         /// is exactly the part somebody reads a wire log to see.
         async fn read_wire_log(
             &self,
-            request: tonic::Request<::pbjson_types::Empty>,
+            request: tonic::Request<crate::wire::ReadWireLogRequest>,
         ) -> std::result::Result<tonic::Response<crate::wire::WireLog>, tonic::Status>;
         /// Server streaming response type for the WatchWire method.
         type WatchWireStream: tonic::codegen::tokio_stream::Stream<
@@ -877,7 +884,7 @@ pub mod device_server {
         /// The same wire as it happens.
         async fn watch_wire(
             &self,
-            request: tonic::Request<::pbjson_types::Empty>,
+            request: tonic::Request<crate::wire::WatchWireRequest>,
         ) -> std::result::Result<tonic::Response<Self::WatchWireStream>, tonic::Status>;
     }
     /// The board, and the wire to it.
@@ -963,7 +970,9 @@ pub mod device_server {
                 "/mousewheeld.v1.Device/ReadVersion" => {
                     #[allow(non_camel_case_types)]
                     struct ReadVersionSvc<T: Device>(pub Arc<T>);
-                    impl<T: Device> tonic::server::UnaryService<::pbjson_types::Empty>
+                    impl<
+                        T: Device,
+                    > tonic::server::UnaryService<crate::wire::ReadVersionRequest>
                     for ReadVersionSvc<T> {
                         type Response = crate::wire::VersionReport;
                         type Future = BoxFuture<
@@ -972,7 +981,7 @@ pub mod device_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<::pbjson_types::Empty>,
+                            request: tonic::Request<crate::wire::ReadVersionRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -1006,7 +1015,9 @@ pub mod device_server {
                 "/mousewheeld.v1.Device/ReadDevice" => {
                     #[allow(non_camel_case_types)]
                     struct ReadDeviceSvc<T: Device>(pub Arc<T>);
-                    impl<T: Device> tonic::server::UnaryService<::pbjson_types::Empty>
+                    impl<
+                        T: Device,
+                    > tonic::server::UnaryService<crate::wire::ReadDeviceRequest>
                     for ReadDeviceSvc<T> {
                         type Response = crate::wire::DeviceInfo;
                         type Future = BoxFuture<
@@ -1015,7 +1026,7 @@ pub mod device_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<::pbjson_types::Empty>,
+                            request: tonic::Request<crate::wire::ReadDeviceRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -1046,11 +1057,13 @@ pub mod device_server {
                     };
                     Box::pin(fut)
                 }
-                "/mousewheeld.v1.Device/Connect" => {
+                "/mousewheeld.v1.Device/OpenLink" => {
                     #[allow(non_camel_case_types)]
-                    struct ConnectSvc<T: Device>(pub Arc<T>);
-                    impl<T: Device> tonic::server::UnaryService<::pbjson_types::Empty>
-                    for ConnectSvc<T> {
+                    struct OpenLinkSvc<T: Device>(pub Arc<T>);
+                    impl<
+                        T: Device,
+                    > tonic::server::UnaryService<crate::wire::OpenLinkRequest>
+                    for OpenLinkSvc<T> {
                         type Response = crate::wire::DeviceInfo;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -1058,11 +1071,11 @@ pub mod device_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<::pbjson_types::Empty>,
+                            request: tonic::Request<crate::wire::OpenLinkRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as Device>::connect(&inner, request).await
+                                <T as Device>::open_link(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -1073,7 +1086,7 @@ pub mod device_server {
                     let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
-                        let method = ConnectSvc(inner);
+                        let method = OpenLinkSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -1092,7 +1105,9 @@ pub mod device_server {
                 "/mousewheeld.v1.Device/ReadFirmware" => {
                     #[allow(non_camel_case_types)]
                     struct ReadFirmwareSvc<T: Device>(pub Arc<T>);
-                    impl<T: Device> tonic::server::UnaryService<::pbjson_types::Empty>
+                    impl<
+                        T: Device,
+                    > tonic::server::UnaryService<crate::wire::ReadFirmwareRequest>
                     for ReadFirmwareSvc<T> {
                         type Response = crate::wire::FirmwareVersions;
                         type Future = BoxFuture<
@@ -1101,7 +1116,7 @@ pub mod device_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<::pbjson_types::Empty>,
+                            request: tonic::Request<crate::wire::ReadFirmwareRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -1135,7 +1150,9 @@ pub mod device_server {
                 "/mousewheeld.v1.Device/ReadWireLog" => {
                     #[allow(non_camel_case_types)]
                     struct ReadWireLogSvc<T: Device>(pub Arc<T>);
-                    impl<T: Device> tonic::server::UnaryService<::pbjson_types::Empty>
+                    impl<
+                        T: Device,
+                    > tonic::server::UnaryService<crate::wire::ReadWireLogRequest>
                     for ReadWireLogSvc<T> {
                         type Response = crate::wire::WireLog;
                         type Future = BoxFuture<
@@ -1144,7 +1161,7 @@ pub mod device_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<::pbjson_types::Empty>,
+                            request: tonic::Request<crate::wire::ReadWireLogRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -1180,8 +1197,9 @@ pub mod device_server {
                     struct WatchWireSvc<T: Device>(pub Arc<T>);
                     impl<
                         T: Device,
-                    > tonic::server::ServerStreamingService<::pbjson_types::Empty>
-                    for WatchWireSvc<T> {
+                    > tonic::server::ServerStreamingService<
+                        crate::wire::WatchWireRequest,
+                    > for WatchWireSvc<T> {
                         type Response = crate::wire::WireLine;
                         type ResponseStream = T::WatchWireStream;
                         type Future = BoxFuture<
@@ -1190,7 +1208,7 @@ pub mod device_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<::pbjson_types::Empty>,
+                            request: tonic::Request<crate::wire::WatchWireRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -1278,7 +1296,7 @@ pub mod state_service_server {
         /// whether to believe it.
         async fn read_state(
             &self,
-            request: tonic::Request<::pbjson_types::Empty>,
+            request: tonic::Request<crate::wire::ReadStateRequest>,
         ) -> std::result::Result<tonic::Response<crate::wire::RigState>, tonic::Status>;
         /// Server streaming response type for the WatchState method.
         type WatchStateStream: tonic::codegen::tokio_stream::Stream<
@@ -1389,7 +1407,7 @@ pub mod state_service_server {
                     struct ReadStateSvc<T: StateService>(pub Arc<T>);
                     impl<
                         T: StateService,
-                    > tonic::server::UnaryService<::pbjson_types::Empty>
+                    > tonic::server::UnaryService<crate::wire::ReadStateRequest>
                     for ReadStateSvc<T> {
                         type Response = crate::wire::RigState;
                         type Future = BoxFuture<
@@ -1398,7 +1416,7 @@ pub mod state_service_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<::pbjson_types::Empty>,
+                            request: tonic::Request<crate::wire::ReadStateRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -1577,7 +1595,7 @@ pub mod zones_server {
         /// The names in the store.
         async fn list_zone_sets(
             &self,
-            request: tonic::Request<::pbjson_types::Empty>,
+            request: tonic::Request<crate::wire::ListZoneSetsRequest>,
         ) -> std::result::Result<
             tonic::Response<crate::wire::ZoneSetNames>,
             tonic::Status,
@@ -1625,12 +1643,12 @@ pub mod zones_server {
         /// it without a daemon running.
         async fn read_zone_set_schema(
             &self,
-            request: tonic::Request<::pbjson_types::Empty>,
-        ) -> std::result::Result<tonic::Response<::pbjson_types::Struct>, tonic::Status>;
+            request: tonic::Request<crate::wire::ReadZoneSetSchemaRequest>,
+        ) -> std::result::Result<tonic::Response<::prost_types::Struct>, tonic::Status>;
         /// What is armed, what fired, and where.
         async fn read_armed(
             &self,
-            request: tonic::Request<::pbjson_types::Empty>,
+            request: tonic::Request<crate::wire::ReadArmedRequest>,
         ) -> std::result::Result<
             tonic::Response<crate::wire::ArmedZones>,
             tonic::Status,
@@ -1650,7 +1668,7 @@ pub mod zones_server {
         >;
         async fn disarm(
             &self,
-            request: tonic::Request<::pbjson_types::Empty>,
+            request: tonic::Request<crate::wire::DisarmRequest>,
         ) -> std::result::Result<
             tonic::Response<crate::wire::ArmedZones>,
             tonic::Status,
@@ -1659,7 +1677,7 @@ pub mod zones_server {
         /// with its zones. Refuses `nothing_armed`.
         async fn save_to_flash(
             &self,
-            request: tonic::Request<::pbjson_types::Empty>,
+            request: tonic::Request<crate::wire::SaveToFlashRequest>,
         ) -> std::result::Result<
             tonic::Response<crate::wire::DeviceInfo>,
             tonic::Status,
@@ -1755,7 +1773,9 @@ pub mod zones_server {
                 "/mousewheeld.v1.Zones/ListZoneSets" => {
                     #[allow(non_camel_case_types)]
                     struct ListZoneSetsSvc<T: Zones>(pub Arc<T>);
-                    impl<T: Zones> tonic::server::UnaryService<::pbjson_types::Empty>
+                    impl<
+                        T: Zones,
+                    > tonic::server::UnaryService<crate::wire::ListZoneSetsRequest>
                     for ListZoneSetsSvc<T> {
                         type Response = crate::wire::ZoneSetNames;
                         type Future = BoxFuture<
@@ -1764,7 +1784,7 @@ pub mod zones_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<::pbjson_types::Empty>,
+                            request: tonic::Request<crate::wire::ListZoneSetsRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -1970,16 +1990,20 @@ pub mod zones_server {
                 "/mousewheeld.v1.Zones/ReadZoneSetSchema" => {
                     #[allow(non_camel_case_types)]
                     struct ReadZoneSetSchemaSvc<T: Zones>(pub Arc<T>);
-                    impl<T: Zones> tonic::server::UnaryService<::pbjson_types::Empty>
+                    impl<
+                        T: Zones,
+                    > tonic::server::UnaryService<crate::wire::ReadZoneSetSchemaRequest>
                     for ReadZoneSetSchemaSvc<T> {
-                        type Response = ::pbjson_types::Struct;
+                        type Response = ::prost_types::Struct;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<::pbjson_types::Empty>,
+                            request: tonic::Request<
+                                crate::wire::ReadZoneSetSchemaRequest,
+                            >,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -2013,7 +2037,9 @@ pub mod zones_server {
                 "/mousewheeld.v1.Zones/ReadArmed" => {
                     #[allow(non_camel_case_types)]
                     struct ReadArmedSvc<T: Zones>(pub Arc<T>);
-                    impl<T: Zones> tonic::server::UnaryService<::pbjson_types::Empty>
+                    impl<
+                        T: Zones,
+                    > tonic::server::UnaryService<crate::wire::ReadArmedRequest>
                     for ReadArmedSvc<T> {
                         type Response = crate::wire::ArmedZones;
                         type Future = BoxFuture<
@@ -2022,7 +2048,7 @@ pub mod zones_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<::pbjson_types::Empty>,
+                            request: tonic::Request<crate::wire::ReadArmedRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -2099,7 +2125,9 @@ pub mod zones_server {
                 "/mousewheeld.v1.Zones/Disarm" => {
                     #[allow(non_camel_case_types)]
                     struct DisarmSvc<T: Zones>(pub Arc<T>);
-                    impl<T: Zones> tonic::server::UnaryService<::pbjson_types::Empty>
+                    impl<
+                        T: Zones,
+                    > tonic::server::UnaryService<crate::wire::DisarmRequest>
                     for DisarmSvc<T> {
                         type Response = crate::wire::ArmedZones;
                         type Future = BoxFuture<
@@ -2108,7 +2136,7 @@ pub mod zones_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<::pbjson_types::Empty>,
+                            request: tonic::Request<crate::wire::DisarmRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -2142,7 +2170,9 @@ pub mod zones_server {
                 "/mousewheeld.v1.Zones/SaveToFlash" => {
                     #[allow(non_camel_case_types)]
                     struct SaveToFlashSvc<T: Zones>(pub Arc<T>);
-                    impl<T: Zones> tonic::server::UnaryService<::pbjson_types::Empty>
+                    impl<
+                        T: Zones,
+                    > tonic::server::UnaryService<crate::wire::SaveToFlashRequest>
                     for SaveToFlashSvc<T> {
                         type Response = crate::wire::DeviceInfo;
                         type Future = BoxFuture<
@@ -2151,7 +2181,7 @@ pub mod zones_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<::pbjson_types::Empty>,
+                            request: tonic::Request<crate::wire::SaveToFlashRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {

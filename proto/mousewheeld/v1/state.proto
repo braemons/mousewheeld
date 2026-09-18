@@ -3,29 +3,19 @@ syntax = "proto3";
 
 package mousewheeld.v1;
 
-import "braemons/v1/route.proto";
-import "google/protobuf/empty.proto";
 
 // Where the wheel is.
 service StateService {
   // Everything true right now, per axis, with the link health that says
   // whether to believe it.
-  rpc ReadState(google.protobuf.Empty) returns (RigState) {
-    option (braemons.v1.route) = { method: "GET", path: "/api/state" };
-  }
+  rpc ReadState(ReadStateRequest) returns (RigState);
 
   // The decimated path, as it happens.
   //
   // `rate_hz` is a query parameter and is what the browser asks for, **not**
   // what the device samples at: the daemon decimates and says what it lost.
   // A consumer breaks its line on `lost_before` and on nothing else.
-  rpc WatchState(WatchStateRequest) returns (stream StreamFrame) {
-    option (braemons.v1.route) = {
-      method: "GET",
-      path: "/api/stream",
-      websocket: true
-    };
-  }
+  rpc WatchState(WatchStateRequest) returns (stream StreamFrame);
 
   // Move the **API origin** — what displacement, distance and the zones are
   // measured from.
@@ -34,13 +24,7 @@ service StateService {
   // frame, and a value that jumps backwards jumps the corridor backwards.
   // Teleporting a corridor is a command to vstimd, from whoever runs the
   // experiment.
-  rpc ZeroPosition(ZeroRequest) returns (RigState) {
-    option (braemons.v1.route) = {
-      method: "POST",
-      path: "/api/position/zero",
-      body: "*"
-    };
-  }
+  rpc ZeroPosition(ZeroRequest) returns (RigState);
 }
 
 message WatchStateRequest {
@@ -148,3 +132,12 @@ message ZoneHitEvent {
   uint64 host_monotonic_ns = 4 [json_name = "host_monotonic_ns"];
   double position_cm = 5 [json_name = "position_cm"];
 }
+
+// Each rpc has its own request message, even where it carries nothing today.
+//
+// `google.protobuf.Empty` would say the same thing and close the door: a field
+// cannot be added to it later, so an rpc that grows an argument would need a
+// new rpc. `contracts/INTERACTIONS.md` §11 promises additive change within a
+// major version, and this is what keeps that promise available.
+
+message ReadStateRequest {}

@@ -7,10 +7,8 @@
 
 use std::sync::Arc;
 
-use axum::extract::State;
-use axum::Json;
+use tonic::{Request, Response, Status};
 
-use crate::api::ApiJson;
 use crate::convert::calibration::{
     calibration_patch_from_wire, calibration_to_wire, measurement_applied_to_wire,
     measurement_result_to_wire, measurement_started_to_wire, start_measurement_from_wire,
@@ -19,21 +17,21 @@ use crate::daemon_state::{Daemon, MeasurementInProgress};
 use crate::model::calibration::{MeasurementApplied, MeasurementResult, MeasurementStarted};
 use crate::model::{ApiError, ApiResult};
 use crate::wire;
+use crate::wire::service::calibration_server::{Calibration, CalibrationServer};
+
+use super::status_of;
 
 /// Ratios that mean a decoder rather than a wheel: quadrature counted ×1 or ×2
 /// where the counts-per-revolution assumed ×4. It looks exactly like a wheel of
 /// the wrong size, so the daemon says which it thinks it is.
 const DECODING_RATIOS: [(f64, &str); 4] = [(4.0, "4×"), (2.0, "2×"), (0.5, "½×"), (0.25, "¼×")];
 
-pub async fn read_calibration(State(daemon): State<Arc<Daemon>>) -> Json<wire::CalibrationState> {
-    Json(calibration_to_wire(daemon.calibration()))
+fn read_calibration_body(daemon: &Arc<Daemon>) -> wire::CalibrationState {
+    calibration_to_wire(daemon.calibration())
 }
 
 /// Change a calibration by hand. Every field optional; the rest is left alone.
-pub async fn replace_calibration(
-    State(daemon): State<Arc<Daemon>>,
-    ApiJson(patch): ApiJson<wire::CalibrationPatch>,
-) -> ApiResult<Json<wire::CalibrationState>> {
+fn replace_calibration_body(daemon: &Arc<Daemon>, patch: wire::CalibrationPatch) -> ApiResult<wire::CalibrationState> {
     let patch = calibration_patch_from_wire(patch);
     {
         let mut config = daemon.config.lock().unwrap();
@@ -70,19 +68,19 @@ pub async fn replace_calibration(
             }
         }
     }
-    apply_to_running_axes(&daemon);
+    apply_to_running_axes(daemon);
     daemon
         .save_config()
         .map_err(|problem| ApiError::internal("config_unwritable", problem))?;
-    Ok(Json(calibration_to_wire(daemon.calibration())))
+    Ok(calibration_to_wire(daemon.calibration()))
 }
 
 /// The 2-D skeleton: modelled, routed, and refused by name.
-pub async fn read_ball() -> ApiResult<Json<wire::BallCalibration>> {
+fn read_ball_body() -> ApiResult<wire::BallCalibration> {
     Err(ball_is_not_here())
 }
 
-pub async fn replace_ball() -> ApiResult<Json<wire::BallCalibration>> {
+fn replace_ball_body() -> ApiResult<wire::BallCalibration> {
     Err(ball_is_not_here())
 }
 
@@ -95,10 +93,7 @@ fn ball_is_not_here() -> ApiError {
 }
 
 /// Note the counter and start counting.
-pub async fn start_measurement(
-    State(daemon): State<Arc<Daemon>>,
-    ApiJson(request): ApiJson<wire::StartMeasurement>,
-) -> ApiResult<Json<wire::MeasurementStarted>> {
+fn start_measurement_body(daemon: &Arc<Daemon>, request: wire::StartMeasurement) -> ApiResult<wire::MeasurementStarted> {
     let request = start_measurement_from_wire(request);
     if request.known_distance_cm <= 0.0 {
         return Err(ApiError::refused(
@@ -120,19 +115,17 @@ pub async fn start_measurement(
         counts_at_start: counts,
     });
     *daemon.measured.lock().unwrap() = None;
-    Ok(Json(measurement_started_to_wire(MeasurementStarted {
+    Ok(measurement_started_to_wire(MeasurementStarted {
         axis: request.axis,
         known_distance_cm: request.known_distance_cm,
         counts_at_start: counts,
         counts,
-    })))
+    }))
 }
 
 /// Stop counting and report — measured beside configured, and what the
 /// difference looks like.
-pub async fn finish_measurement(
-    State(daemon): State<Arc<Daemon>>,
-) -> ApiResult<Json<wire::MeasurementResult>> {
+fn finish_measurement_body(daemon: &Arc<Daemon>) -> ApiResult<wire::MeasurementResult> {
     let started = daemon
         .measuring
         .lock()
@@ -189,13 +182,11 @@ pub async fn finish_measurement(
             }),
     };
     *daemon.measured.lock().unwrap() = Some(result.clone());
-    Ok(Json(measurement_result_to_wire(result)))
+    Ok(measurement_result_to_wire(result))
 }
 
 /// Make the measurement the rig's truth.
-pub async fn apply_measurement(
-    State(daemon): State<Arc<Daemon>>,
-) -> ApiResult<Json<wire::MeasurementApplied>> {
+fn apply_measurement_body(daemon: &Arc<Daemon>) -> ApiResult<wire::MeasurementApplied> {
     let result = daemon
         .measured
         .lock()
@@ -215,7 +206,7 @@ pub async fn apply_measurement(
         axis.counts_per_cm = result.measured_counts_per_cm;
         axis.measured_at = Some(now_as_text());
     }
-    apply_to_running_axes(&daemon);
+    apply_to_running_axes(daemon);
     daemon
         .save_config()
         .map_err(|problem| ApiError::internal("config_unwritable", problem))?;
@@ -225,11 +216,11 @@ pub async fn apply_measurement(
     // reinterpreted under another, and the next arm recompiles.
     daemon.device.disarm();
 
-    Ok(Json(measurement_applied_to_wire(MeasurementApplied {
+    Ok(measurement_applied_to_wire(MeasurementApplied {
         axis: result.axis,
         counts_per_cm: result.measured_counts_per_cm,
         zone_sets_invalidated: true,
-    })))
+    }))
 }
 
 /// Push the calibration into the running axes, so what the API reports in
@@ -271,4 +262,75 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
     let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
     let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
     (if m <= 2 { y + 1 } else { y }, m, d)
+}
+
+// ------------------------------------------------------------- the service ---
+//
+// Thin on purpose: convert, call the body above, map a refusal to a status.
+// The bodies are unchanged from when these were HTTP handlers, which is the
+// point — moving transport was not meant to be an opportunity to rewrite the
+// measurement procedure.
+
+#[tonic::async_trait]
+impl Calibration for super::Rig {
+    async fn read_calibration(
+        &self,
+        _request: Request<wire::ReadCalibrationRequest>,
+    ) -> Result<Response<wire::CalibrationState>, Status> {
+        Ok(Response::new(read_calibration_body(&self.daemon)))
+    }
+
+    async fn replace_calibration(
+        &self,
+        request: Request<wire::CalibrationPatch>,
+    ) -> Result<Response<wire::CalibrationState>, Status> {
+        replace_calibration_body(&self.daemon, request.into_inner())
+            .map(Response::new)
+            .map_err(status_of)
+    }
+
+    async fn read_ball(
+        &self,
+        _request: Request<wire::ReadBallRequest>,
+    ) -> Result<Response<wire::BallCalibration>, Status> {
+        read_ball_body().map(Response::new).map_err(status_of)
+    }
+
+    async fn replace_ball(
+        &self,
+        _request: Request<wire::BallCalibration>,
+    ) -> Result<Response<wire::BallCalibration>, Status> {
+        replace_ball_body().map(Response::new).map_err(status_of)
+    }
+
+    async fn start_measuring(
+        &self,
+        request: Request<wire::StartMeasurement>,
+    ) -> Result<Response<wire::MeasurementStarted>, Status> {
+        start_measurement_body(&self.daemon, request.into_inner())
+            .map(Response::new)
+            .map_err(status_of)
+    }
+
+    async fn finish_measuring(
+        &self,
+        _request: Request<wire::FinishMeasuringRequest>,
+    ) -> Result<Response<wire::MeasurementResult>, Status> {
+        finish_measurement_body(&self.daemon)
+            .map(Response::new)
+            .map_err(status_of)
+    }
+
+    async fn apply_measurement(
+        &self,
+        _request: Request<wire::ApplyMeasurementRequest>,
+    ) -> Result<Response<wire::MeasurementApplied>, Status> {
+        apply_measurement_body(&self.daemon)
+            .map(Response::new)
+            .map_err(status_of)
+    }
+}
+
+pub fn server(rig: super::Rig) -> CalibrationServer<super::Rig> {
+    CalibrationServer::new(rig)
 }

@@ -35,22 +35,28 @@ proto: ## Regenerate daemon/src/wire/ from proto/
 	$(CARGO) run --quiet --manifest-path tools/protogen/Cargo.toml
 
 # proto/ is the interface (contracts/DAEMON_LAYOUT.md), and an interface
-# nothing checks is a wish. Three things are checked and they catch different
-# mistakes: protoc catches a file that does not parse; the regenerated output
-# catches committed code that no longer matches the schema; and
-# check_routes.py catches a handler wired into the router with no rpc above it
-# — a piece of public API that exists and is written down nowhere.
-check-proto: ## Fail if the proto does not compile, is stale, or misses a route
+# nothing checks is a wish. Two things are checked: protoc catches a file that
+# does not parse, and the regenerated output catches committed code that no
+# longer matches the schema.
+#
+# There was a third — a route checker, holding a hand-maintained router to the
+# rpcs by reading source code. Under gRPC the generated service trait has a
+# method per rpc and the compiler refuses an incomplete implementation, so
+# `cargo build` is the check.
+check-proto: ## Fail if the proto does not compile or the generated code is stale
 	@protoc --proto_path=proto --descriptor_set_out=/dev/null \
-	  proto/mousewheeld/v1/*.proto proto/braemons/v1/route.proto
+	  proto/mousewheeld/v1/*.proto
 	@$(MAKE) --no-print-directory proto
-	@git diff --quiet -- daemon/src/wire || { \
+	@# Only the generated files: `mod.rs` beside them is hand-written, and a
+	@# check that flagged it would fail every time somebody wrote a comment.
+	@git diff --quiet -- daemon/src/wire/mousewheeld.v1.rs daemon/src/wire/service \
+	  daemon/src/wire/descriptor_for_reflection.bin || { \
 	  echo "daemon/src/wire/ is not what proto/ produces — the interface changed:"; \
-	  git --no-pager diff --stat -- daemon/src/wire; \
+	  git --no-pager diff --stat -- daemon/src/wire/mousewheeld.v1.rs daemon/src/wire/service \
+	    daemon/src/wire/descriptor_for_reflection.bin; \
 	  echo "run 'make proto' and commit the result with the change that caused it."; \
 	  exit 1; \
 	}
-	@python3 tools/check_routes.py
 
 # A NUL byte in a source file makes git call it binary, and a binary file has no
 # diff — so it is reviewed by nobody, silently, for as long as it takes somebody
@@ -88,12 +94,8 @@ dev: ## A wheel on a thread, elements served from disk, panels at http://127.0.0
 # description contracts/DAEMON_LAYOUT.md exists to prevent now that the first
 # one is written by hand.
 schema: build ## Regenerate docs/reference/zone-set.schema.json from the types
-	@./target/release/mousewheeld serve --simulate --port 8099 --storage-dir ./dev/store & \
-	 pid=$$!; sleep 1; \
-	 curl -fsS http://127.0.0.1:8099/api/zone-sets/schema \
-	   | python3 -m json.tool --indent 2 > docs/reference/zone-set.schema.json; \
-	 kill $$pid; \
-	 echo "docs/reference/zone-set.schema.json"
+	@./target/release/mousewheeld schema > docs/reference/zone-set.schema.json
+	@echo "docs/reference/zone-set.schema.json"
 
 check-schema: ## Fail if the committed schema is not what the code produces
 	@$(MAKE) --no-print-directory schema

@@ -17,10 +17,9 @@
 //! purpose — `{"reference": "goal_cm"}` where the file says `"$goal_cm"`. This
 //! schema is the file's, because an editor has the file open.
 
-use axum::Json;
 use serde_json::{json, Map, Value};
 
-use super::file_schemas::FileSchemas;
+use crate::file_schema_types::FileSchemas;
 use utoipa::OpenApi;
 
 /// A standalone JSON Schema for one component, with everything it references.
@@ -82,11 +81,53 @@ fn references_in(value: &Value) -> Vec<String> {
     }
 }
 
-/// `GET /api/zone-sets/schema` — what a zone set may contain.
-pub async fn zone_set_schema() -> Json<Value> {
-    Json(standalone_schema(
+/// What a zone set file may contain.
+///
+/// Printed by `mousewheeld schema` and committed to
+/// `docs/reference/zone-set.schema.json`. A subcommand rather than a route:
+/// this is a build artifact for an editor and for CI, neither of which should
+/// have to start a daemon to get it.
+pub fn zone_set_schema() -> Value {
+    standalone_schema(
         "ZoneSet",
         "https://braemons.org/mousewheeld/zone-set.schema.json",
         "mousewheeld zone set",
-    ))
+    )
+}
+
+/// The same schema as a protobuf `Struct`, for the rpc that serves it.
+///
+/// A hand-written walk because there is no longer a JSON mapping to borrow
+/// one from: `prost-types` models arbitrary JSON and `serde_json` produces it,
+/// and nothing in between knows about both. Twenty lines, and the only place
+/// in this daemon where arbitrary JSON crosses the wire.
+pub fn as_protobuf_struct(value: &Value) -> prost_types::Struct {
+    match structured(value).kind {
+        Some(prost_types::value::Kind::StructValue(structure)) => structure,
+        // A JSON Schema is an object at the top by definition; anything else is
+        // this function being called on the wrong thing.
+        _ => prost_types::Struct::default(),
+    }
+}
+
+fn structured(value: &Value) -> prost_types::Value {
+    use prost_types::value::Kind;
+    let kind = match value {
+        Value::Null => Kind::NullValue(0),
+        Value::Bool(flag) => Kind::BoolValue(*flag),
+        // Every JSON number becomes a double, which is what protobuf's own
+        // `Value` offers and what JSON numbers are anyway.
+        Value::Number(number) => Kind::NumberValue(number.as_f64().unwrap_or(0.0)),
+        Value::String(text) => Kind::StringValue(text.clone()),
+        Value::Array(items) => Kind::ListValue(prost_types::ListValue {
+            values: items.iter().map(structured).collect(),
+        }),
+        Value::Object(fields) => Kind::StructValue(prost_types::Struct {
+            fields: fields
+                .iter()
+                .map(|(name, field)| (name.clone(), structured(field)))
+                .collect(),
+        }),
+    };
+    prost_types::Value { kind: Some(kind) }
 }

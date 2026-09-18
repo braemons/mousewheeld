@@ -32,7 +32,7 @@ use crate::daemon_state::Daemon;
 #[folder = "../client/web/elements"]
 struct Elements;
 
-pub fn routes() -> Router<Arc<Daemon>> {
+fn routes() -> Router<Arc<Daemon>> {
     Router::new()
         .route("/", get(development_page))
         .route("/elements/{*path}", get(serve_element))
@@ -56,4 +56,12 @@ async fn serve_element(Path(path): Path<String>) -> Response {
 /// A page that mounts every panel, for a bench with no console on it.
 async fn development_page() -> Html<&'static str> {
     Html(include_str!("development_page.html"))
+}
+
+/// The whole HTTP surface: the panels, and the page that mounts them.
+///
+/// **That is all HTTP does here now.** The API is gRPC on the same port; this
+/// serves the `/elements/` contract, which is files a console fetches by URL.
+pub fn router(daemon: Arc<Daemon>) -> Router {
+    routes().with_state(daemon)
 }

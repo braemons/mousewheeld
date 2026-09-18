@@ -37,7 +37,7 @@
           ]
         },
         "level": {
-          "description": "Fire on arming if the animal is already inside. Off by default: a zone\nfires on the false\u2192true **edge** of \"inside\", so arming a zone somebody\nis standing in does not fire it.",
+          "description": "Fire on arming if the animal is already inside. Off by default: a zone\nfires on the false→true **edge** of \"inside\", so arming a zone somebody\nis standing in does not fire it.",
           "type": "boolean"
         },
         "max_cm": {

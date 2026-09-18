@@ -3,8 +3,6 @@ syntax = "proto3";
 
 package mousewheeld.v1;
 
-import "braemons/v1/route.proto";
-import "google/protobuf/empty.proto";
 
 // Rates, and the line map.
 //
@@ -15,23 +13,17 @@ import "google/protobuf/empty.proto";
 service Config {
   // The settings a session may change and the ones it may only read, in one
   // answer.
-  rpc ReadConfig(google.protobuf.Empty) returns (ConfigView) {
-    option (braemons.v1.route) = { method: "GET", path: "/api/config" };
-  }
+  rpc ReadConfig(ReadConfigRequest) returns (ConfigView);
 
   // Change the rates. Absent fields are left alone.
-  rpc PatchConfig(ConfigPatch) returns (ConfigView) {
-    option (braemons.v1.route) = { method: "PATCH", path: "/api/config", body: "*" };
-  }
+  rpc PatchConfig(ConfigPatch) returns (ConfigView);
 
   // The output lines, by name.
   //
   // Read-only over the API: a zone set says `"line": "zone_goal"`, and the pin
   // behind that name belongs to the rig's config. This is the same split
   // statemachined draws between its graphs and its line map.
-  rpc ReadLines(google.protobuf.Empty) returns (LineMap) {
-    option (braemons.v1.route) = { method: "GET", path: "/api/lines" };
-  }
+  rpc ReadLines(ReadLinesRequest) returns (LineMap);
 }
 
 message ConfigView {
@@ -95,3 +87,14 @@ message OutputLine {
   // reach this before anything else runs.
   bool safe_high = 4 [json_name = "safe_high"];
 }
+
+// Each rpc has its own request message, even where it carries nothing today.
+//
+// `google.protobuf.Empty` would say the same thing and close the door: a field
+// cannot be added to it later, so an rpc that grows an argument would need a
+// new rpc. `contracts/INTERACTIONS.md` §11 promises additive change within a
+// major version, and this is what keeps that promise available.
+
+message ReadConfigRequest {}
+
+message ReadLinesRequest {}

@@ -22,7 +22,7 @@ use mousewheeld::daemon_state::Daemon;
 use mousewheeld::device::{Backend, Device};
 use mousewheeld::model::config::RigConfig;
 use mousewheeld::zones::ZoneSetStore;
-use mousewheeld::{api, device, publish};
+use mousewheeld::{device, grpc, publish, web};
 
 /// statemachined is 8081, vstimd 8080, triald 8420.
 const DEFAULT_PORT: u16 = 8082;
@@ -60,6 +60,13 @@ enum Command {
         #[arg(long)]
         simulate: bool,
     },
+    /// Print the JSON Schema of a zone-set file.
+    ///
+    /// A subcommand and not an rpc, because a zone set is a *file*: an editor
+    /// with one open and a CI job checking one both need its schema, and
+    /// neither should have to start a daemon to get it. The committed copy in
+    /// `docs/reference/zone-set.schema.json` is this output.
+    Schema,
     /// Subscribe to another host's stream and write the local vinput segment.
     Relay {
         /// The publishing daemon, e.g. `tcp://rig-a:5557`.
@@ -79,6 +86,10 @@ fn main() {
             storage_dir,
             simulate,
         } => serve(port, bind, rig_config, storage_dir, simulate),
+        Command::Schema => {
+            let schema = mousewheeld::file_schema::zone_set_schema();
+            println!("{}", serde_json::to_string_pretty(&schema).expect("a schema"));
+        }
         Command::Relay { from } => {
             // Named here rather than hidden, because the subcommand is part of
             // the shape: a camera on another host is served by a relay, not by
@@ -185,20 +196,36 @@ fn serve(port: u16, bind: String, rig_config: PathBuf, storage_dir: PathBuf, sim
                 std::process::exit(1);
             }
         };
-        log::info!("mousewheeld on http://{address}  (panels at /, interface at /api/proto)");
+        log::info!("mousewheeld on {address}  (panels at /, gRPC and reflection on the same port)");
 
-        // THE SPIKE: axum and tonic on one port.
+        // **axum and tonic on one listener.**
         //
-        // A tonic service is a tower service, so it merges into the axum router
-        // that already serves the panels and the REST API. One listener, one
-        // systemd unit, one port in the udev/firewall story — which is what
-        // makes this fit the deb without changing the packaging at all.
-        use tower::ServiceBuilder;
-        let grpc = ServiceBuilder::new()
-            .layer(tonic_web::GrpcWebLayer::new())
-            .service(mousewheeld::grpc_spike::device_server(daemon.clone()));
-        // Both reflection versions, because clients disagree about which to
-        // ask for: grpcurl and Python's reflection database still use v1alpha.
+        // A tonic service is a tower service, so each of the five merges into
+        // the axum router that serves the panels. One port, one systemd unit,
+        // one line in the firewall — the deb does not change because the
+        // daemon grew an RPC surface.
+        //
+        // `tonic_web` translates gRPC-Web in process, so a browser reaches
+        // these without a proxy and without a second daemon. Bidirectional
+        // streaming is the one thing it cannot carry, which matters for
+        // exactly one rpc: reflection. A browser therefore cannot discover the
+        // API this way; a client library can, and does.
+        // Each service is its own type, so this is five calls rather than a loop.
+        // `tonic::service::Routes` collects the services and hands back an axum
+        // router, which merges with the one serving the panels. Each service
+        // registers its own path — `/mousewheeld.v1.Zones/…` — so no route is
+        // written down anywhere and renaming a service in the `.proto` moves it.
+        let rig = grpc::Rig::new(daemon.clone());
+        let mut services = tonic::service::Routes::builder();
+        services
+            .add_service(grpc::device::server(rig.clone()))
+            .add_service(grpc::state::server(rig.clone()))
+            .add_service(grpc::calibration::server(rig.clone()))
+            .add_service(grpc::zones::server(rig.clone()))
+            .add_service(grpc::config::server(rig));
+
+        // Both reflection versions: clients disagree about which to ask for,
+        // and grpcurl and Python's reflection database still want v1alpha.
         let reflection = tonic_reflection::server::Builder::configure()
             .register_encoded_file_descriptor_set(mousewheeld::wire::DESCRIPTOR)
             .build_v1()
@@ -207,23 +234,19 @@ fn serve(port: u16, bind: String, rig_config: PathBuf, storage_dir: PathBuf, sim
             .register_encoded_file_descriptor_set(mousewheeld::wire::DESCRIPTOR)
             .build_v1alpha()
             .expect("the descriptor set this binary was built from");
-        let app = api::router(daemon)
-            .route_service(
-                "/mousewheeld.v1.Device/{*rest}",
-                grpc,
-            )
-            .route_service(
-                "/grpc.reflection.v1.ServerReflection/{*rest}",
-                ServiceBuilder::new()
-                    .layer(tonic_web::GrpcWebLayer::new())
-                    .service(reflection),
-            )
-            .route_service(
-                "/grpc.reflection.v1alpha.ServerReflection/{*rest}",
-                ServiceBuilder::new()
-                    .layer(tonic_web::GrpcWebLayer::new())
-                    .service(reflection_alpha),
-            );
+        let mut services = services;
+        services.add_service(reflection).add_service(reflection_alpha);
+
+        // gRPC-Web on the whole stack rather than per service: the layer only
+        // acts on requests that arrive with a gRPC-Web content type, so the
+        // panels pass through it untouched.
+        let app = web::router(daemon).merge(
+            services
+                .routes()
+                .into_axum_router()
+                .layer(tonic_web::GrpcWebLayer::new()),
+        );
+
         if let Err(problem) = axum::serve(listener, app)
             .with_graceful_shutdown(async {
                 let _ = tokio::signal::ctrl_c().await;

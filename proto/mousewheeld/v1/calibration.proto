@@ -3,8 +3,6 @@ syntax = "proto3";
 
 package mousewheeld.v1;
 
-import "braemons/v1/route.proto";
-import "google/protobuf/empty.proto";
 
 // Counts per centimetre, and how it was measured.
 //
@@ -13,34 +11,18 @@ import "google/protobuf/empty.proto";
 // centimetres too and cannot read either one's config. One copy, here, and
 // every number that leaves is in centimetres.
 service Calibration {
-  rpc ReadCalibration(google.protobuf.Empty) returns (CalibrationState) {
-    option (braemons.v1.route) = { method: "GET", path: "/api/calibration" };
-  }
+  rpc ReadCalibration(ReadCalibrationRequest) returns (CalibrationState);
 
   // Change one or more axes. Absent fields are left alone, so a panel may send
   // a single number. An axis name the rig does not have is a 404, never a new
   // axis.
-  rpc ReplaceCalibration(CalibrationPatch) returns (CalibrationState) {
-    option (braemons.v1.route) = {
-      method: "PUT",
-      path: "/api/calibration",
-      body: "*"
-    };
-  }
+  rpc ReplaceCalibration(CalibrationPatch) returns (CalibrationState);
 
   // The 2-D ball. Answers 501 until the hardware exists — declared so that
   // adding it is filling in rather than redesigning.
-  rpc ReadBall(google.protobuf.Empty) returns (BallCalibration) {
-    option (braemons.v1.route) = { method: "GET", path: "/api/calibration/ball" };
-  }
+  rpc ReadBall(ReadBallRequest) returns (BallCalibration);
 
-  rpc ReplaceBall(BallCalibration) returns (BallCalibration) {
-    option (braemons.v1.route) = {
-      method: "PUT",
-      path: "/api/calibration/ball",
-      body: "*"
-    };
-  }
+  rpc ReplaceBall(BallCalibration) returns (BallCalibration);
 
   // Begin counting for a guided measurement.
   //
@@ -48,28 +30,18 @@ service Calibration {
   // describes a wheel the animal does not run on: what a corridor position is
   // made of is how far the feet travelled, on the surface they touch, with
   // whatever tread is on it — a few percent off the nominal every time.
-  rpc StartMeasuring(StartMeasurement) returns (MeasurementStarted) {
-    option (braemons.v1.route) = {
-      method: "POST",
-      path: "/api/calibration/measure/start",
-      body: "*"
-    };
-  }
+  rpc StartMeasuring(StartMeasurement) returns (MeasurementStarted);
 
   // Stop counting and report what the wheel said, beside what the config says.
   // Nothing is changed by this call.
-  rpc FinishMeasuring(google.protobuf.Empty) returns (MeasurementResult) {
-    option (braemons.v1.route) = { method: "POST", path: "/api/calibration/measure/finish" };
-  }
+  rpc FinishMeasuring(FinishMeasuringRequest) returns (MeasurementResult);
 
   // Apply the last measurement.
   //
   // A separate, deliberate press, because a calibration change invalidates
   // every compiled zone set: a set armed under one calibration is never
   // silently reinterpreted under another.
-  rpc ApplyMeasurement(google.protobuf.Empty) returns (MeasurementApplied) {
-    option (braemons.v1.route) = { method: "POST", path: "/api/calibration/measure/apply" };
-  }
+  rpc ApplyMeasurement(ApplyMeasurementRequest) returns (MeasurementApplied);
 }
 
 // Named `CalibrationState` and not `Calibration`: the service already holds
@@ -180,3 +152,18 @@ message MeasurementApplied {
   // Compiled zone sets are stale now, and the next arm recompiles.
   bool zone_sets_invalidated = 3 [json_name = "zone_sets_invalidated"];
 }
+
+// Each rpc has its own request message, even where it carries nothing today.
+//
+// `google.protobuf.Empty` would say the same thing and close the door: a field
+// cannot be added to it later, so an rpc that grows an argument would need a
+// new rpc. `contracts/INTERACTIONS.md` §11 promises additive change within a
+// major version, and this is what keeps that promise available.
+
+message ReadCalibrationRequest {}
+
+message ReadBallRequest {}
+
+message FinishMeasuringRequest {}
+
+message ApplyMeasurementRequest {}

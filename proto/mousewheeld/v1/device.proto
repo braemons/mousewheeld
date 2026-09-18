@@ -3,8 +3,6 @@ syntax = "proto3";
 
 package mousewheeld.v1;
 
-import "braemons/v1/route.proto";
-import "google/protobuf/empty.proto";
 import "mousewheeld/v1/version.proto";
 
 // The board, and the wire to it.
@@ -13,47 +11,34 @@ import "mousewheeld/v1/version.proto";
 // and the second is which firmware is on it.
 service Device {
   // What this daemon is and what it speaks. Answers without a board.
-  rpc ReadVersion(google.protobuf.Empty) returns (VersionReport) {
-    option (braemons.v1.route) = { method: "GET", path: "/api/version" };
-  }
+  rpc ReadVersion(ReadVersionRequest) returns (VersionReport);
 
   // Whether a board is attached, which one, and how the link is holding up.
-  rpc ReadDevice(google.protobuf.Empty) returns (DeviceInfo) {
-    option (braemons.v1.route) = { method: "GET", path: "/api/device" };
-  }
+  rpc ReadDevice(ReadDeviceRequest) returns (DeviceInfo);
 
   // Open the serial port named in the rig config and greet the board.
+  //
+  // Named `OpenLink` and not `Connect` because a generated client already has
+  // a `connect` — the one that opens the channel — and the two collide.
   //
   // Idempotent: connecting a connected daemon answers with what is already
   // there. Refuses `no_device` when the port is not openable, and refuses a
   // board whose protocol is below the floor **by name**, rather than speaking
   // to it half-understood.
-  rpc Connect(google.protobuf.Empty) returns (DeviceInfo) {
-    option (braemons.v1.route) = { method: "POST", path: "/api/device/connect" };
-  }
+  rpc OpenLink(OpenLinkRequest) returns (DeviceInfo);
 
   // What the board is running, and what this daemon could flash onto it.
-  rpc ReadFirmware(google.protobuf.Empty) returns (FirmwareVersions) {
-    option (braemons.v1.route) = { method: "GET", path: "/api/device/firmware" };
-  }
+  rpc ReadFirmware(ReadFirmwareRequest) returns (FirmwareVersions);
 
   // The recent wire, both directions, uninterpreted.
   //
   // A bounded ring. The conversation and the sample traffic are kept apart —
   // at 500 Hz a shared ring evicts the `hello` handshake within seconds, which
   // is exactly the part somebody reads a wire log to see.
-  rpc ReadWireLog(google.protobuf.Empty) returns (WireLog) {
-    option (braemons.v1.route) = { method: "GET", path: "/api/device/monitor" };
-  }
+  rpc ReadWireLog(ReadWireLogRequest) returns (WireLog);
 
   // The same wire as it happens.
-  rpc WatchWire(google.protobuf.Empty) returns (stream WireLine) {
-    option (braemons.v1.route) = {
-      method: "GET",
-      path: "/api/device/monitor/stream",
-      websocket: true
-    };
-  }
+  rpc WatchWire(WatchWireRequest) returns (stream WireLine);
 }
 
 message DeviceInfo {
@@ -146,3 +131,22 @@ message FirmwareVersions {
   // What this daemon ships and could flash. Empty until the firmware exists.
   repeated string available = 2;
 }
+
+// Each rpc has its own request message, even where it carries nothing today.
+//
+// `google.protobuf.Empty` would say the same thing and close the door: a field
+// cannot be added to it later, so an rpc that grows an argument would need a
+// new rpc. `contracts/INTERACTIONS.md` §11 promises additive change within a
+// major version, and this is what keeps that promise available.
+
+message ReadVersionRequest {}
+
+message ReadDeviceRequest {}
+
+message OpenLinkRequest {}
+
+message ReadFirmwareRequest {}
+
+message ReadWireLogRequest {}
+
+message WatchWireRequest {}

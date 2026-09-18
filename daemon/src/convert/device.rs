@@ -63,13 +63,13 @@ pub fn wire_line_to_wire(line: m::WireLine) -> wire::WireLine {
     wire::WireLine {
         host_monotonic_ns: line.host_monotonic_ns,
         direction: match line.direction {
-            m::WireDirection::Out => wire::WireDirection::WireDirectionOut,
-            m::WireDirection::In => wire::WireDirection::WireDirectionIn,
+            m::WireDirection::Out => wire::WireDirection::Out,
+            m::WireDirection::In => wire::WireDirection::In,
         } as i32,
         text: line.text,
         level: match line.level {
-            m::WireLevel::Info => wire::WireLevel::WireLevelInfo,
-            m::WireLevel::Error => wire::WireLevel::WireLevelError,
+            m::WireLevel::Info => wire::WireLevel::Info,
+            m::WireLevel::Error => wire::WireLevel::Error,
         } as i32,
     }
 }
