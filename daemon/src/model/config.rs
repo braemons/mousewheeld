@@ -198,6 +198,12 @@ pub struct ConfigView {
     pub display_hz: u32,
     pub ring_minutes: u32,
     pub shm_name: String,
+    /// Whether that segment is actually open. A name in a config file and a
+    /// mapped segment are different things, and the difference is the whole
+    /// reason a corridor sometimes does not move.
+    pub shm_open: bool,
+    /// Writes that have reached it since it was created.
+    pub shm_writes: u64,
     pub event_port: u16,
     /// Read-only here: wiring is changed where wiring is described.
     pub port: String,

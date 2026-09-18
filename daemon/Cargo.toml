@@ -33,5 +33,16 @@ rand = "0.8"
 # The serial port and the pty behind the board simulator: termios, posix_openpt.
 libc = "0.2"
 
+# **The one dependency on another braemons repository, and the one exception to
+# "no shared code".** It is barely one: the segment layout is a contract between
+# a writer and a reader, and the reader's own definition of it is the only copy
+# that cannot drift — the same way `gpiochip-daqd` consumes `vtl`.
+#
+# Pinned to a tag rather than tracking a branch, because what this crate defines
+# is a memory layout: a struct that moved under a running rig is bytes
+# reinterpreted, not a field that went missing. The magic and version inside the
+# segment are the runtime check for a rig where this pin lied.
+vinput = { git = "https://github.com/braemons/vstimd", tag = "v0.3.0-alpha1" }
+
 [dev-dependencies]
 tempfile = "3"

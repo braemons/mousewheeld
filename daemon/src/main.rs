@@ -18,6 +18,7 @@ mod daemon_state;
 mod device;
 mod link;
 mod model;
+mod publish;
 mod zones;
 
 use std::path::PathBuf;
@@ -155,7 +156,13 @@ fn serve(port: u16, bind: String, rig_config: PathBuf, storage_dir: PathBuf, sim
         .iter()
         .map(|line| (line.index, line.pin, line.safe_high))
         .collect();
-    let device = Device::new(backend, axes, lines, stream_rate_hz);
+    // The segment vstimd reads every frame. Created before the link, so the
+    // first sample that arrives already has somewhere to go.
+    let publisher = publish::SegmentPublisher::create(
+        &config.publish.shm_name,
+        &config.axes.iter().map(|axis| axis.name.clone()).collect::<Vec<_>>(),
+    );
+    let device = Device::new(backend, axes, lines, stream_rate_hz, publisher);
 
     let daemon = Arc::new(Daemon {
         config_path: rig_config,

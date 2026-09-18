@@ -19,8 +19,11 @@ use crate::model::{ApiError, ApiResult};
 #[utoipa::path(get, path = "/api/config", tag = "config",
     responses((status = 200, body = ConfigView)))]
 pub async fn read_config(State(daemon): State<Arc<Daemon>>) -> Json<ConfigView> {
+    let publishing = daemon.device.publishing();
     let config = daemon.config.lock().unwrap();
     Json(ConfigView {
+        shm_open: publishing.is_some(),
+        shm_writes: publishing.map(|(_, writes)| writes).unwrap_or(0),
         rate_hz: config.stream.rate_hz,
         display_hz: config.stream.display_hz,
         ring_minutes: config.stream.ring_minutes,

@@ -694,6 +694,7 @@ dependencies = [
  "toml",
  "tower-http",
  "utoipa",
+ "vinput",
 ]
 
 [[package]]
@@ -1332,6 +1333,14 @@ name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
+
+[[package]]
+name = "vinput"
+version = "0.0.0"
+source = "git+https://github.com/braemons/vstimd?tag=v0.3.0-alpha1#b41e3e34e4bfc1c4137e9ab5b1c7e4cfd238b614"
+dependencies = [
+ "libc",
+]
 
 [[package]]
 name = "walkdir"

@@ -617,14 +617,18 @@ As `vstimd/dev/INPUT_LATENCY.md` §4 specifies it:
 | axis descriptor | `wheel` · `Cumulative` · `scale = 1.0` (cm) — a ball later adds `x`, `y`, `yaw` |
 | state | seqlock · `[f64; N]` · writer heartbeat, monotonic ns |
 
-The real-time thread is a producer through `VinputOwner` from vstimd's `vinput` crate,
-**pinned to a vstimd release tag**. Depending on the crate rather than
+The producer goes through `VinputOwner` from vstimd's `vinput` crate, **pinned
+to a vstimd release tag** — `v0.3.0-alpha1`, tagged for this. Depending on the crate rather than
 reimplementing the layout is the one exception to "no shared code", and it is not
 really one: the layout is a contract between a writer and a reader, and the
 reader's own definition of it is the only copy that cannot drift. `vtl` is
 consumed the same way by `gpiochip-daqd`.
 
-**Status on vstimd's side: the consumer half is built and waiting for a
+**Both halves now exist.** mousewheeld writes the segment (M3) and vstimd reads
+it; the two agree, on a desk, with a simulated board. What is left of M3 is the
+number that needs hardware: encoder-to-photon.
+
+**Status on vstimd's side: the consumer half was built first and waited for a
 producer.** An earlier revision of this paragraph said none of it existed; that
 is no longer true. On vstimd's `0.3`: the `vinput` crate (seqlock, `f64` values,
 heartbeat, `VinputOwner`/`VinputClient`), `InputRegistry` sampling every device
@@ -909,7 +913,7 @@ contract. Each is rewritten here to this project's shapes.
 | **M0** | ⬜ | Firmware core: counter extension, origin/odometer, zones, rings, framing, JSON reader, fixed writers. Host tests green under gcc/clang and sanitizers |
 | **M1** | ⬜ | Teensy 4.1 HAL, then ESP32 HAL. Analog output, flash, debug mode. **Scan rate and link cost measured and asserted** |
 | **M2** | 🟨 | Daemon. **Built:** the control side — API and model types, zone-set store and compiler with per-trial patches, calibration and its measurement procedure, config and line map, generated OpenAPI, `/elements/` embedded — and the link: `docs/reference/protocol.md`, framing and CRC, the typed messages, the serial port in raw mode, the reader thread, clock correlation, the continuity offset, and a board simulator on a pty. **Left:** the thread's *real-time* discipline (a dedicated thread at elevated priority, no allocation on the per-sample path), marks and the path ring, recording, and the Python client |
-| **M3** | ⬜ | vinput producer, through vstimd's `vinput` crate (which exists, with `LinearNav3D`, and is waiting for a writer). Encoder-to-photon latency measured |
+| **M3** | 🟨 | vinput producer. **Built:** the segment is created from the rig config's axes and written first of the three publications, in centimetres, through vstimd's `vinput` crate pinned at `v0.3.0-alpha1`; verified against a running vstimd, which reads the same numbers with no torn reads and no starved frames. **Left:** encoder-to-photon latency, which needs a board and a photodiode |
 | **M4** | ⬜ | ZMQ PUB with `events.proto`; `mousewheeld relay` |
 | **M5** | ⬜ | Zones end to end: line map from the rig config, store, patches, compiler, arm, flash, TTL into statemachined and daqd |
 | **M6** | 🟨 | Web client and packaging. **Built:** the five console elements, served from the binary with `rust-embed`; nfpm, the systemd unit with `CAP_SYS_NICE`, the udev rule and sysusers. **Left:** mDNS `_mousewheeld._tcp`, and the console's `SERVICE_TYPES` line |

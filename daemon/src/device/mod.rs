@@ -47,6 +47,7 @@ use crate::model::state::{
     AxisState, LinkHealth, LinkState, RigState, Sample, StreamFrame, ZoneHitEvent,
 };
 use crate::model::zone_set::{ArmOrigin, FireRule, ZoneMetric, ZoneStatus};
+use crate::publish::SegmentPublisher;
 use crate::zones::{CompiledZone, CompiledZoneSet};
 
 /// The conversation — greetings, uploads, arms, refusals — and nothing else.
@@ -160,6 +161,9 @@ pub struct Device {
     wire: broadcast::Sender<WireLine>,
     running: Arc<AtomicBool>,
     stream_rate_hz: u32,
+    /// The segment vstimd reads every frame. `None` when it could not be
+    /// created, which is a warning and not a reason to stop.
+    publisher: Option<SegmentPublisher>,
 }
 
 /// Which set is armed, and under what.
@@ -176,6 +180,7 @@ impl Device {
         axes: Vec<AxisSetup>,
         lines: Vec<WireLine2>,
         stream_rate_hz: u32,
+        publisher: Option<SegmentPublisher>,
     ) -> Arc<Self> {
         let count = axes.len();
         let device = Arc::new(Self {
@@ -224,6 +229,7 @@ impl Device {
             wire: broadcast::channel(1024).0,
             running: Arc::new(AtomicBool::new(true)),
             stream_rate_hz,
+            publisher,
         });
         if let Err(problem) = device.clone().open_link() {
             log::warn!("the device link did not open: {problem}");
@@ -495,10 +501,15 @@ impl Device {
         }
     }
 
-    /// One sample: loss, the clock, continuity, the mirrors, the broadcast.
+    /// One sample: loss, the clock, continuity, the mirrors — then the segment,
+    /// and only then the broadcast.
+    ///
+    /// **The segment is written first of the three publications.** vstimd reads
+    /// it inside the frame it is drawing and cannot wait for a socket send; the
+    /// stream's subscribers can wait for anything.
     fn absorb_sample(&self, sample: &WireSample) {
         let host_now = monotonic_ns();
-        let frame = {
+        let (frame, centimetres) = {
             let mut inner = self.inner.lock().unwrap();
 
             // `seq` is contiguous on this wire, so a jump is loss — unlike the
@@ -558,14 +569,28 @@ impl Device {
                 }
             }
 
-            Sample {
-                seq: sample.seq,
-                device_us: sample.t_us,
-                host_monotonic_ns,
-                lost_before,
-                axes: inner.axes.iter().map(axis_state).collect(),
-            }
+            // Centimetres, from the published accumulator: what every
+            // consumer of this daemon is told, and the only unit in the
+            // segment.
+            let centimetres: Vec<f64> = inner
+                .axes
+                .iter()
+                .map(|axis| axis.counts as f64 / axis.counts_per_cm)
+                .collect();
+            (
+                Sample {
+                    seq: sample.seq,
+                    device_us: sample.t_us,
+                    host_monotonic_ns,
+                    lost_before,
+                    axes: inner.axes.iter().map(axis_state).collect(),
+                },
+                centimetres,
+            )
         };
+        if let Some(publisher) = self.publisher.as_ref() {
+            publisher.publish(&centimetres);
+        }
         let _ = self.frames.send(StreamFrame::Sample(frame));
     }
 
@@ -854,6 +879,15 @@ impl Device {
             .iter()
             .find(|axis| axis.name == axis_name)
             .map(|axis| axis.counts)
+    }
+
+    /// The segment this daemon is publishing to, and how many writes have
+    /// reached it — the number a reader's own count is compared against when
+    /// somebody asks why a corridor is not moving.
+    pub fn publishing(&self) -> Option<(String, u64)> {
+        self.publisher
+            .as_ref()
+            .map(|publisher| (publisher.name().to_string(), publisher.write_count()))
     }
 
     pub fn recalibrate(&self, axis_name: &str, counts_per_cm: f64) {
