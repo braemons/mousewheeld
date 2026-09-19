@@ -6,15 +6,43 @@
 //! status code throws exactly that away.
 //!
 //! **This is the daemon's vocabulary, not the wire's.** `grpc::status_of` is
-//! the single place it becomes a `tonic::Status`, and the `StatusCode` kept
-//! here is how a refusal says which *kind* it is — it is a category, and that
-//! it is spelled as an HTTP code is an accident of where this type grew up.
+//! the single place it becomes a `tonic::Status`, and the `Refusal` kept here
+//! is how a refusal says which *kind* it is.
+//!
+//! That field used to be an `axum::http::StatusCode`, because this type grew
+//! up behind HTTP routes. Nothing here has answered HTTP since the interface
+//! became `proto/mousewheeld/v1/`, so the category was spelled as a number
+//! from a protocol the daemon no longer speaks — and `grpc/mod.rs` translated
+//! it back. Six names now, and they say what they mean.
 
-use axum::http::StatusCode;
 use serde::Serialize;
 use utoipa::ToSchema;
 
 pub type ApiResult<T> = Result<T, ApiError>;
+
+/// Why a call was refused — the category, in this daemon's own words.
+///
+/// The *case* within a category is `ApiErrorBody::error`, which is what a
+/// client switches on. This is the coarser thing a caller may act on without
+/// reading the rest: `Unavailable` is the only one worth retrying unchanged.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Refusal {
+    /// No such zone set, no such axis.
+    NoSuchThing,
+    /// Understood and refused: a zone set that does not compile, a rate above
+    /// the scan.
+    BadRequest,
+    /// The daemon is not in a state where this means anything: nothing armed,
+    /// nothing measured.
+    WrongMoment,
+    /// Nothing about the request is wrong and it will work when the link comes
+    /// back. The one a caller may retry unchanged.
+    NoBoardAttached,
+    /// Designed, modelled, and not built. The 2-D ball.
+    NotBuiltYet,
+    /// Something the daemon owns went wrong.
+    TheDaemonBroke,
+}
 
 /// A refusal, as the API renders it.
 #[derive(Debug, Clone, Serialize, ToSchema)]
@@ -30,14 +58,14 @@ pub struct ApiErrorBody {
 
 #[derive(Debug, Clone)]
 pub struct ApiError {
-    pub status: StatusCode,
+    pub refusal: Refusal,
     pub body: ApiErrorBody,
 }
 
 impl ApiError {
-    pub fn new(status: StatusCode, error: &str, detail: impl Into<String>) -> Self {
+    pub fn new(refusal: Refusal, error: &str, detail: impl Into<String>) -> Self {
         Self {
-            status,
+            refusal,
             body: ApiErrorBody {
                 error: error.to_string(),
                 detail: detail.into(),
@@ -53,25 +81,25 @@ impl ApiError {
     }
 
     pub fn not_found(error: &str, detail: impl Into<String>) -> Self {
-        Self::new(StatusCode::NOT_FOUND, error, detail)
+        Self::new(Refusal::NoSuchThing, error, detail)
     }
 
     /// The request was understood and refused — a zone set that does not
     /// compile, a measurement applied before one was taken.
     pub fn refused(error: &str, detail: impl Into<String>) -> Self {
-        Self::new(StatusCode::UNPROCESSABLE_ENTITY, error, detail)
+        Self::new(Refusal::BadRequest, error, detail)
     }
 
     /// The daemon is not in a state where this means anything yet.
     pub fn conflict(error: &str, detail: impl Into<String>) -> Self {
-        Self::new(StatusCode::CONFLICT, error, detail)
+        Self::new(Refusal::WrongMoment, error, detail)
     }
 
     /// No board is attached. Distinct from a refusal: nothing about the request
     /// is wrong, and it will work when the link comes back.
     pub fn no_device() -> Self {
         Self::new(
-            StatusCode::SERVICE_UNAVAILABLE,
+            Refusal::NoBoardAttached,
             "no_device",
             "no board is connected — this needs one",
         )
@@ -80,12 +108,12 @@ impl ApiError {
     /// Designed, modelled, and not built. The 2-D ball's routes answer this by
     /// name so that adding it later is filling in rather than redesigning.
     pub fn not_implemented(detail: impl Into<String>) -> Self {
-        Self::new(StatusCode::NOT_IMPLEMENTED, "not_implemented", detail)
+        Self::new(Refusal::NotBuiltYet, "not_implemented", detail)
     }
 
     /// Something the daemon owns went wrong — a store it could not write.
     pub fn internal(error: &str, detail: impl Into<String>) -> Self {
-        Self::new(StatusCode::INTERNAL_SERVER_ERROR, error, detail)
+        Self::new(Refusal::TheDaemonBroke, error, detail)
     }
 }
 

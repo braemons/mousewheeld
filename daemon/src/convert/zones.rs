@@ -19,8 +19,12 @@ use std::collections::BTreeMap;
 use crate::model::zone_set as m;
 use crate::wire;
 
-/// A refusal, in the words the route will repeat.
-pub type Refusal = String;
+/// Why a conversion was refused, as the sentence the rpc will repeat.
+///
+/// Named for the sentence rather than for the refusal, because
+/// `model::error::Refusal` is the *category* a refusal falls into and two
+/// things called `Refusal` in one crate is one too many.
+pub type RefusalMessage = String;
 
 // ------------------------------------------------------------ outward ---
 
@@ -125,7 +129,7 @@ fn resolved_to_wire(value: Option<f64>) -> wire::ResolvedBound {
 
 // ------------------------------------------------------------- inward ---
 
-pub fn zone_set_from_wire(set: wire::ZoneSet) -> Result<m::ZoneSet, Refusal> {
+pub fn zone_set_from_wire(set: wire::ZoneSet) -> Result<m::ZoneSet, RefusalMessage> {
     Ok(m::ZoneSet {
         schema_url: set.schema_url,
         zone_set_version: set.zone_set_version,
@@ -137,7 +141,7 @@ pub fn zone_set_from_wire(set: wire::ZoneSet) -> Result<m::ZoneSet, Refusal> {
     })
 }
 
-fn zone_from_wire(zone: wire::Zone) -> Result<m::Zone, Refusal> {
+fn zone_from_wire(zone: wire::Zone) -> Result<m::Zone, RefusalMessage> {
     let name = zone.name.clone();
     let output = zone
         .output
@@ -189,7 +193,7 @@ fn bound_from_wire(bound: wire::ZoneBound) -> m::ZoneBound {
     }
 }
 
-pub fn arm_request_from_wire(request: wire::ArmRequest) -> Result<m::ArmRequest, Refusal> {
+pub fn arm_request_from_wire(request: wire::ArmRequest) -> Result<m::ArmRequest, RefusalMessage> {
     Ok(m::ArmRequest {
         zone_set: request.zone_set,
         patch: request.patch.into_iter().collect::<BTreeMap<_, _>>(),

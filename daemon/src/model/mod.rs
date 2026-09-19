@@ -27,4 +27,4 @@ pub mod state;
 pub mod version;
 pub mod zone_set;
 
-pub use error::{ApiError, ApiResult};
+pub use error::{ApiError, ApiResult, Refusal};

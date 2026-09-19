@@ -25,20 +25,19 @@ pub mod zones;
 
 use std::sync::Arc;
 
-use axum::http::StatusCode;
 use prost::Message;
 use tonic::metadata::{MetadataMap, MetadataValue};
 use tonic::{Code, Status};
 
 use crate::daemon_state::Daemon;
-use crate::model::ApiError;
+use crate::model::{ApiError, Refusal};
 
 /// A refusal, as gRPC says it.
 ///
 /// `ApiError` stays the daemon's own vocabulary — `{error, detail, context}`,
 /// raised in `zones/`, `device/` and `model/` — and this is the single place it
-/// becomes a status. The codes are chosen for what they mean rather than by
-/// transcribing the HTTP status the error used to carry:
+/// becomes a status. `ApiError` carries a `Refusal` — this daemon's own six
+/// categories — and each maps to exactly one code:
 ///
 /// * `unavailable` — nothing about the request is wrong and it will work when
 ///   the link comes back. This is `no_device`, and it is the one a caller may
@@ -60,14 +59,16 @@ use crate::model::ApiError;
 /// The message keeps `detail (context)` for everything that has not been told
 /// about the metadata — grpcurl, a log line, a panic in a test.
 pub fn status_of(error: ApiError) -> Status {
-    let ApiError { status, body } = error;
-    let code = match status {
-        StatusCode::SERVICE_UNAVAILABLE => Code::Unavailable,
-        StatusCode::CONFLICT => Code::FailedPrecondition,
-        StatusCode::UNPROCESSABLE_ENTITY => Code::InvalidArgument,
-        StatusCode::NOT_FOUND => Code::NotFound,
-        StatusCode::NOT_IMPLEMENTED => Code::Unimplemented,
-        _ => Code::Internal,
+    let ApiError { refusal, body } = error;
+    // Exhaustive, with no catch-all: a category added to `Refusal` is a
+    // compile error here rather than an `Internal` nobody chose.
+    let code = match refusal {
+        Refusal::NoBoardAttached => Code::Unavailable,
+        Refusal::WrongMoment => Code::FailedPrecondition,
+        Refusal::BadRequest => Code::InvalidArgument,
+        Refusal::NoSuchThing => Code::NotFound,
+        Refusal::NotBuiltYet => Code::Unimplemented,
+        Refusal::TheDaemonBroke => Code::Internal,
     };
     let message = if body.context.is_empty() {
         body.detail.clone()
@@ -162,7 +163,7 @@ mod tests {
     #[test]
     fn a_refusal_with_no_context_is_just_the_sentence() {
         let status = status_of(ApiError {
-            status: StatusCode::SERVICE_UNAVAILABLE,
+            refusal: Refusal::NoBoardAttached,
             body: ApiErrorBody {
                 error: "no_device".into(),
                 detail: "no board attached".into(),
