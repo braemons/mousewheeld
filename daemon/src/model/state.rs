@@ -60,7 +60,7 @@ pub struct LinkState {
     pub connected: bool,
 }
 
-/// One frame of `WS /api/stream`.
+/// One frame of `StateService.WatchState`.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum StreamFrame {
@@ -95,7 +95,7 @@ pub struct ZoneHitEvent {
     pub position_cm: f64,
 }
 
-/// `POST /api/position/zero`.
+/// `StateService.ZeroPosition`.
 ///
 /// Moves the **API origin** — what displacement, distance and the zones are
 /// measured from. Never the accumulator published to a camera: vstimd

@@ -1645,6 +1645,43 @@ pub mod zones_server {
             &self,
             request: tonic::Request<crate::wire::ReadZoneSetSchemaRequest>,
         ) -> std::result::Result<tonic::Response<::prost_types::Struct>, tonic::Status>;
+        /// The same three, on the **file** rather than the message.
+        ///
+        /// A zone set has two spellings and always has: the message above, which a
+        /// generated client builds, and the file on disk, which a person edits and
+        /// copies between rigs. `ReadZoneSet` gives the first. These give the second,
+        /// as the text it is, because an editor with a cursor in it is editing bytes —
+        /// and a browser that converted between the two spellings itself would be the
+        /// second, looser description of a zone set that this service exists to avoid.
+        ///
+        /// The daemon parses with its own deserializer, so what comes back is the
+        /// refusal a hand-edited file would earn, with the line and column in it.
+        async fn read_zone_set_file(
+            &self,
+            request: tonic::Request<crate::wire::ZoneSetName>,
+        ) -> std::result::Result<
+            tonic::Response<crate::wire::ZoneSetFile>,
+            tonic::Status,
+        >;
+        /// Parse, compile, and store. Answers with the file as it was written, which
+        /// is the canonical spelling — an editor shows what is on disk, not what was
+        /// typed at it.
+        async fn write_zone_set_file(
+            &self,
+            request: tonic::Request<crate::wire::ZoneSetFile>,
+        ) -> std::result::Result<
+            tonic::Response<crate::wire::ZoneSetFile>,
+            tonic::Status,
+        >;
+        /// Parse and compile a file that is not in the store. `name` may be empty:
+        /// this is a draft.
+        async fn validate_zone_set_file(
+            &self,
+            request: tonic::Request<crate::wire::ZoneSetFile>,
+        ) -> std::result::Result<
+            tonic::Response<crate::wire::ValidationReport>,
+            tonic::Status,
+        >;
         /// What is armed, what fired, and where.
         async fn read_armed(
             &self,
@@ -2019,6 +2056,135 @@ pub mod zones_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = ReadZoneSetSchemaSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/mousewheeld.v1.Zones/ReadZoneSetFile" => {
+                    #[allow(non_camel_case_types)]
+                    struct ReadZoneSetFileSvc<T: Zones>(pub Arc<T>);
+                    impl<T: Zones> tonic::server::UnaryService<crate::wire::ZoneSetName>
+                    for ReadZoneSetFileSvc<T> {
+                        type Response = crate::wire::ZoneSetFile;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<crate::wire::ZoneSetName>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Zones>::read_zone_set_file(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ReadZoneSetFileSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/mousewheeld.v1.Zones/WriteZoneSetFile" => {
+                    #[allow(non_camel_case_types)]
+                    struct WriteZoneSetFileSvc<T: Zones>(pub Arc<T>);
+                    impl<T: Zones> tonic::server::UnaryService<crate::wire::ZoneSetFile>
+                    for WriteZoneSetFileSvc<T> {
+                        type Response = crate::wire::ZoneSetFile;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<crate::wire::ZoneSetFile>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Zones>::write_zone_set_file(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = WriteZoneSetFileSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/mousewheeld.v1.Zones/ValidateZoneSetFile" => {
+                    #[allow(non_camel_case_types)]
+                    struct ValidateZoneSetFileSvc<T: Zones>(pub Arc<T>);
+                    impl<T: Zones> tonic::server::UnaryService<crate::wire::ZoneSetFile>
+                    for ValidateZoneSetFileSvc<T> {
+                        type Response = crate::wire::ValidationReport;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<crate::wire::ZoneSetFile>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Zones>::validate_zone_set_file(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ValidateZoneSetFileSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

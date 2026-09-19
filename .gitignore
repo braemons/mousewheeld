@@ -7,3 +7,8 @@
 # tools/protogen is its own crate outside the workspace, so it builds into its
 # own target directory; the root /target pattern is anchored and misses it.
 tools/protogen/target/
+
+# The browser client's build step. `gen/` is an intermediate — the artifact is
+# the bundle at client/web/elements/daemon_api_client.js, which IS committed.
+client/web/node_modules/
+client/web/gen/

@@ -90,7 +90,7 @@ pub struct WireLog {
     pub lines: Vec<WireLine>,
 }
 
-/// `GET /api/device/firmware`.
+/// `Device.ReadFirmware`.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct FirmwareVersions {
     /// What the attached board is running.

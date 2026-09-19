@@ -8,7 +8,7 @@ PORT ?= 8082
 VERSION ?= $(shell sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
 ARCH ?= amd64
 
-.PHONY: build test check proto check-proto check-schema check-text run dev schema package clean help
+.PHONY: build test check proto check-proto web check-web check-schema check-text run dev schema package clean help
 
 help:
 	@sed -n 's/^\([a-z-]*\):.*## \(.*\)/  \1|\2/p' $(MAKEFILE_LIST) | column -t -s '|'
@@ -26,6 +26,8 @@ check: ## Build, clippy, tests, the proto, the committed schema, and that source
 	@$(MAKE) --no-print-directory check-proto
 	@$(MAKE) --no-print-directory check-schema
 	@$(MAKE) --no-print-directory check-text
+	@# Not check-web: it needs npm and a network on first run, and this target
+	@# has to work on a rig. CI runs `make check-web` as its own step.
 
 # The generated code is committed, so `cargo build` needs no protoc and a
 # reviewer sees an interface change as a diff. tools/protogen is outside the
@@ -55,6 +57,24 @@ check-proto: ## Fail if the proto does not compile or the generated code is stal
 	  git --no-pager diff --stat -- daemon/src/wire/mousewheeld.v1.rs daemon/src/wire/service \
 	    daemon/src/wire/descriptor_for_reflection.bin; \
 	  echo "run 'make proto' and commit the result with the change that caused it."; \
+	  exit 1; \
+	}
+
+# **The browser's protobuf client is generated and committed**, like
+# daemon/src/wire/ and for the same reason: rust-embed reads client/web/elements/
+# at compile time, so a bundle produced during `cargo build` would make npm a
+# build dependency of the daemon — on every rig, for every release. It is not.
+# `npm ci` installs exactly what package-lock.json pins, so the bundle is
+# reproducible; `make check-web` is what holds it to the proto.
+web: ## Regenerate client/web/elements/daemon_api_client.js from proto/
+	@cd client/web && npm ci --silent --no-audit --no-fund && node build.mjs
+
+check-web: ## Fail if the committed browser client is not what proto/ produces
+	@$(MAKE) --no-print-directory web
+	@git diff --quiet -- client/web/elements/daemon_api_client.js || { \
+	  echo "client/web/elements/daemon_api_client.js is not what proto/ produces:"; \
+	  git --no-pager diff --stat -- client/web/elements/daemon_api_client.js; \
+	  echo "run 'make web' and commit the result with the change that caused it."; \
 	  exit 1; \
 	}
 

@@ -21,8 +21,8 @@
 //   * Every panel has a **shadow root**, so a console's global styles cannot
 //     reach into one dropped onto its page — natively, with no tooling.
 //   * Every attribute is a **string**, so React's attribute-only custom-element
-//     support is enough. vstimd's own UI is React + Vite and this one has no
-//     build step at all; neither has to become the other.
+//     support is enough. vstimd's own UI is React + Vite and this one is plain
+//     ES modules; neither has to become the other.
 //   * `base` is an attribute rather than an assumption, because a console is
 //     not served from the rig.
 //
@@ -30,7 +30,12 @@
 // directly registers only that one, and is also supported — a console that
 // wants the trace and nothing else should not pay for the zone editor.
 //
-// **No build step, no framework, no CDN.** These files are served as written.
+// **No framework and no CDN.** Every file here is served as written, with one
+// exception that is generated and committed: `daemon_api_client.js` is the
+// protobuf client, bundled from `proto/mousewheeld/v1/` by `make web`, because
+// the API is gRPC-Web and a browser cannot make a protobuf client out of
+// nothing. Nothing else has a build step, and `make dev` still means edit a
+// panel and reload the page.
 
 export { DaemonApiClient, DaemonRefusedTheRequest } from "./daemon_api_client.js";
 export { BasePanelElement } from "./base_panel_element.js";
@@ -43,9 +48,10 @@ export { SerialMonitorPanelElement } from "./serial_monitor_panel_element.js";
 // able to draw it the way this UI does rather than inventing a second
 // convention for the same numbers.
 export { domainOf, decimalsFor, drawTimeSeries, drawEventRules } from "./time_series_chart.js";
-// The wire's shapes, exported for the same reason: protobuf's JSON mapping puts
-// a 64-bit integer in a string and spells an enum in full, and a console that
-// reads this daemon's answers directly should not have to rediscover that.
+// The wire's shapes, exported for the same reason: the client hands a panel
+// protobuf's JSON mapping, which puts a 64-bit integer in a string and spells
+// an enum in full, and a console reading this daemon's answers should not have
+// to rediscover that.
 export { count, enumName, metricName, streamFrame, bound } from "./wire_shapes.js";
 
 /// The tag names, so a console can iterate them rather than hard-code a list

@@ -238,7 +238,7 @@ impl ZoneSet {
 
 // -------------------------------------------------------------- arming ---
 
-/// `POST /api/zones/arm`.
+/// `Zones.Arm`.
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ArmRequest {
@@ -293,7 +293,7 @@ pub struct ZoneStatus {
     pub metric: ZoneMetric,
 }
 
-/// `GET /api/zones` — what is armed, what fired, when.
+/// `Zones.ReadArmed` — what is armed, what fired, when.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct ArmedZones {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -307,7 +307,7 @@ pub struct ArmedZones {
     pub zones: Vec<ZoneStatus>,
 }
 
-/// `POST /api/zone-sets/{name}/validate` — compile without uploading.
+/// `Zones.ValidateZoneSet` — compile without uploading.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct ValidationReport {
     pub ok: bool,

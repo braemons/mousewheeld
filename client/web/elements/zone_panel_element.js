@@ -15,27 +15,24 @@
 // on a circular track that is the position the zone is actually compared to.
 //
 // **An armed zone is drawn from what is armed, not from what is stored.** A
-// parameterised set says `"min_cm": [{"reference": "goal_cm"}]`, and it has no
-// number in it at all: drawn from the store, a set armed at 180 cm appears at
-// zero, which is a picture of a zone that is not running. `GET /api/zones`
-// carries each armed zone's resolved bounds for exactly this, and the store's
-// own view labels an unresolved bound `$name` rather than pretending it is a
-// distance.
+// parameterised set says `"min_cm": ["$goal_cm"]`, and it has no number in it
+// at all: drawn from the store, a set armed at 180 cm appears at zero, which is
+// a picture of a zone that is not running. `Zones.ReadArmed` carries each armed
+// zone's resolved bounds for exactly this, and the store's own view labels an
+// unresolved bound `$name` rather than pretending it is a distance. The two
+// spellings of a bound meet in that diagram, and `boundValue` below is where.
 //
 // **Editing is the JSON, deliberately.** A form reproducing the zone set here
 // would be a second, worse copy of its schema, drifting from the first time a
 // field is added.
 //
-// **It is the API's JSON, not the file's, and the two differ on purpose.** What
-// this editor holds is what `GET /api/zone-sets/{name}` answered: bounds as
-// `{"value": 30}` / `{"reference": "goal_cm"}` / `{}`, enums spelled
-// `ZONE_SHAPE_RECT`. The file in the store keeps the shorter spelling a person
-// writes by hand — `30`, `"$goal_cm"`, `null`, `"rect"` — and the daemon
-// converts between them. So **the text of a file cannot be pasted in here**,
-// and what is typed here is not what lands on disk. That is the price of the
-// interface being one typed thing (`proto/mousewheeld/v1/zones.proto`) while
-// the file stays pleasant to edit, and it is the right way round: the shape a
-// client must get exactly right is the one a generator produces.
+// **It is the file's JSON, and it goes to the daemon as text.** A zone set has
+// two spellings: the message a generated client builds, and the file a person
+// edits — `30`, `"$goal_cm"`, `null`, `"rect"`. This editor holds the file,
+// through `Zones.ReadZoneSetFile` and `WriteZoneSetFile`, so the text on screen
+// is the text on disk and either can be pasted into the other. The daemon
+// converts between the two spellings, in one place; a browser that did it would
+// be a third description of a zone set, disagreeing with both.
 //
 // What the editor owes instead is **telling you as you type**. Every edit is
 // compiled by the daemon — the real deserializer, the real compiler, against
@@ -47,9 +44,10 @@
 // The check is the daemon's and not a JSON Schema implementation in here, on
 // purpose. A validator in the browser would be a second description of a zone
 // set, looser than the one that matters, and looser is worse than absent — it
-// is believed. The schema *is* published, at `/api/zone-sets/schema`, for the
-// two places that cannot call the daemon: a text editor with the file open, and
-// CI.
+// is believed. The schema *is* published — `Zones.ReadZoneSetSchema`, the
+// "file schema" button here, and `mousewheeld schema` on the rig — for the two
+// places that cannot call the daemon while somebody types: a text editor with
+// the file open, and CI.
 
 import { BasePanelElement, defineElementOnce } from "./base_panel_element.js";
 import { bound, metricName } from "./wire_shapes.js";
@@ -94,8 +92,8 @@ export class ZonePanelElement extends BasePanelElement {
     this.verdict = this.make("div", { class: "note" });
     this.status = this.make("span", { class: "muted" });
     this.originPicker = this.make("select", {}, [
-      this.make("option", { value: "current", text: "origin: current (a trial)" }),
-      this.make("option", { value: "absolute", text: "origin: absolute (the device's)" }),
+      this.make("option", { value: "ARM_ORIGIN_CURRENT", text: "origin: current (a trial)" }),
+      this.make("option", { value: "ARM_ORIGIN_ABSOLUTE", text: "origin: absolute (the device's)" }),
     ]);
     this.patchField = this.make("input", {
       type: "text",
@@ -138,20 +136,41 @@ export class ZonePanelElement extends BasePanelElement {
         this.make("div", { class: "row" }, [
           this.make("button", { text: "save to the store", onClick: () => this.save() }),
           this.make("button", { text: "revert", onClick: () => { this.draft = null; this.loadSelected(); } }),
-          this.make("a", {
-            href: this.api.zoneSetSchemaUrl(),
-            target: "_blank",
+          this.make("button", {
             class: "muted",
             style: "font-size:0.8rem",
             text: "file schema",
+            onClick: () => this.attempt(() => this.downloadFileSchema()),
             title:
-              "The JSON Schema of a zone set FILE — the stored spelling, not the one in this " +
-              "editor. Put its URL in a file's \"$schema\" line and a text editor validates it " +
-              "as you type; point a checker at it in CI. The API's own shape is at /api/proto.",
+              "Download the JSON Schema of a zone set FILE — the stored spelling, not the one " +
+              "in this editor. Point a text editor's \"$schema\" line at the saved file and it " +
+              "validates as you type; point a checker at it in CI. This is the schema THIS " +
+              "daemon believes, which is the one worth validating against; the same document " +
+              "is `mousewheeld schema` on the rig. The API's own shape is the proto, which the " +
+              "daemon serves by gRPC reflection.",
           }),
         ]),
       ]),
     );
+  }
+
+  /// The zone-set file schema, saved from the daemon that is running.
+  ///
+  /// A download rather than a link: the schema is an rpc's answer now, and a
+  /// browser cannot put a gRPC response behind an `href`. Saving it is what an
+  /// editor wants anyway — a `$schema` line has to point at a file it can read
+  /// without speaking to a rig.
+  async downloadFileSchema() {
+    const schema = await this.api.readZoneSetSchema();
+    const blob = new Blob([JSON.stringify(schema, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    try {
+      this.make("a", { href: url, download: "zone-set.schema.json" }).click();
+    } finally {
+      // Late enough for the click to have started the save, and not left behind:
+      // an object URL holds its blob until the document goes away.
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    }
   }
 
   start() {
@@ -187,12 +206,12 @@ export class ZonePanelElement extends BasePanelElement {
 
   async loadSelected() {
     if (this.selectedName === null) return;
-    const set = await this.attempt(() => this.api.readZoneSet(this.selectedName));
-    if (set === null) return;
+    const file = await this.attempt(() => this.api.readZoneSetFile(this.selectedName));
+    if (file === null) return;
     this.paintVerdict("", "");
     // Never overwrite what somebody is typing: the poll runs at 1 Hz and this
     // is the one field on the panel with a cursor in it.
-    if (this.draft === null) this.editor.value = JSON.stringify(set, null, 2);
+    if (this.draft === null) this.editor.value = file.text;
     this.paintDiagram();
   }
 
@@ -384,16 +403,12 @@ export class ZonePanelElement extends BasePanelElement {
   }
 
   /// Compile what is in the editor, saving nothing.
+  ///
+  /// The text goes as text. A file that does not parse is exactly the case an
+  /// editor exists for, and the daemon's own deserializer says where it broke.
   async validateDraft() {
-    let parsed;
     try {
-      parsed = JSON.parse(this.draft ?? this.editor.value);
-    } catch (problem) {
-      this.paintVerdict("bad", `${problem.message}`);
-      return;
-    }
-    try {
-      const report = await this.api.validateDraft(parsed);
+      const report = await this.api.validateZoneSetFile(this.draft ?? this.editor.value);
       this.paintVerdict(
         report.ok ? "good" : "bad",
         report.ok
@@ -419,15 +434,15 @@ export class ZonePanelElement extends BasePanelElement {
 
   async save() {
     if (this.selectedName === null) return null;
-    let parsed;
-    try {
-      parsed = JSON.parse(this.editor.value);
-    } catch (error) {
-      this.showFailure(error);
-      return null;
+    const saved = await this.attempt(() =>
+      this.api.writeZoneSetFile(this.selectedName, this.editor.value),
+    );
+    // The daemon answers with the file as it is now on disk, one spelling
+    // however it was typed, so the editor shows what was stored.
+    if (saved !== null) {
+      this.draft = null;
+      this.editor.value = saved.text;
     }
-    const saved = await this.attempt(() => this.api.replaceZoneSet(this.selectedName, parsed));
-    if (saved !== null) this.draft = null;
     return saved;
   }
 
@@ -453,12 +468,20 @@ export class ZonePanelElement extends BasePanelElement {
 /// A bound waiting for a value the arm patch has not supplied yet.
 ///
 /// On the wire an authored bound is a `oneof`: `{"value": 30}`, or
-/// `{"reference": "goal_cm"}`, or `{}` for an open end. An *armed* bound cannot
-/// be a reference at all — the daemon resolved it before the board saw it — and
-/// says so by being a different type, `ResolvedBound`, which has no reference
-/// arm to check.
+/// `{"reference": "goal_cm"}`, or `{}` for an open end; in the *file* — which
+/// is what the editor holds, and what the diagram is drawn from while somebody
+/// types — it is `30`, `"$goal_cm"` or `null`. Both spellings meet in this
+/// diagram because it draws the authored set beside the armed one, and an
+/// *armed* bound cannot be a reference at all: the daemon resolved it before
+/// the board saw it, and says so by being a different type, `ResolvedBound`,
+/// which has no reference arm to check.
 function isReference(value) {
+  if (typeof value === "string") return value.startsWith("$");
   return typeof value?.reference === "string";
+}
+
+function referenceName(value) {
+  return typeof value === "string" ? value.slice(1) : value.reference;
 }
 
 /// The bound to draw: the armed one where there is one, the stored one
@@ -471,12 +494,13 @@ function boundOf(live, zone, field, index) {
 
 /// A bound as a number, or `null` for open or still-unresolved.
 function boundValue(value) {
+  if (typeof value === "number") return value; // the file spelling
   return isReference(value) ? null : bound(value);
 }
 
 function describeBound(value, whenOpen) {
-  if (isReference(value)) return `$${value.reference}`;
-  const number = bound(value);
+  if (isReference(value)) return `$${referenceName(value)}`;
+  const number = boundValue(value);
   return number === null ? whenOpen : number.toFixed(0);
 }
 

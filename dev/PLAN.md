@@ -223,7 +223,7 @@ As authored:
 ```
 
 **An armed zone reports the bounds it is actually comparing against.**
-`GET /api/zones` carries each armed zone's resolved `min_cm`/`max_cm` — the
+`Zones.ReadArmed` carries each armed zone's resolved `min_cm`/`max_cm` — the
 `$name`s substituted, the counts on the board converted back. Without them a UI
 can only draw the set as *stored*, and a set armed at 180 cm by a patch appears
 at zero: a picture of a zone that is not running. This was added because the
@@ -535,16 +535,25 @@ join key** with statemachined's trace and vstimd's vblank timestamps
 (`INPUT_LATENCY.md` §11.3 names `CLOCK_MONOTONIC` as vstimd's domain). Without
 it, "how far did it run during trial 42" cannot be asked.
 
-### The wire shape is the file shape
+### The interface is authored, and the file shape is its own
 
-statemachined gets this from pydantic; here it is `serde`. The zone set, the
-calibration and the config are one set of Rust types that are at once the HTTP
-body, the file in the store and the rig-config section — no DTOs, which is
-vstimd's rule (*the config format is the runtime shape*). `utoipa` derives the
-OpenAPI document from the same types and the daemon serves it at
-`/api/openapi.json`, so the clients below are checked against the daemon rather
-than against a description of it. Unknown fields are refused on input, so a typo
-in a zone set is an error rather than a zone with a default.
+**Superseded — see `contracts/DAEMON_LAYOUT.md`.** This section said the wire
+shape *was* the file shape: one set of Rust types serving as the HTTP body, the
+file in the store and the rig-config section at once, with `utoipa` deriving an
+OpenAPI document from them and the daemon serving it.
+
+That inverted the dependency. A generated description of whatever the handlers
+happened to do is not an interface — it changes when the Rust changes, silently,
+and a client is checked against a mirror. The interface is now **authored**, in
+`proto/mousewheeld/v1/`, types *and* rpcs, reviewed as a diff; `daemon/src/wire/`
+is generated from it and `daemon/src/convert/` is the seam to the Rust the
+daemon thinks in.
+
+The file in the store keeps its own shape and its own serde, because a zone set
+is an artifact a person edits — `"displacement"`, `"$goal_cm"`, `null` — and the
+API serves it both ways rather than making a client convert. Unknown fields are
+refused on input in both spellings, so a typo in a zone set is an error rather
+than a zone with a default.
 
 ### Clients
 
@@ -697,25 +706,30 @@ and bulk data "belongs in its own file referenced by path" (triald `dev/PLAN.md`
 
 ## The API
 
-HTTP+JSON on **8082** (statemachined 8081, vstimd 8080, triald 8420). Units in
-names, as in vstimd: `position_cm`, `counts_per_cm`, `velocity_cm_s`.
+**gRPC** on **8082** (statemachined 8081, vstimd 8080, triald 8420), with
+gRPC-Web on the same port for the panels and server reflection for everything
+else. Units in names, as in vstimd: `position_cm`, `counts_per_cm`,
+`velocity_cm_s`.
+
+The tables below name rpcs. `docs/reference/api.md` says what each is for;
+`proto/mousewheeld/v1/` is the interface itself.
 
 ### Device
 
 | | |
 |---|---|
-| `GET /api/device` | board, firmware, capacities, link state, calibration in force |
-| `POST /api/device/connect` | |
-| `GET /api/device/firmware` | |
-| `GET /api/device/monitor` · `WS /api/device/monitor/stream` | the raw wire, both directions |
+| `Device.ReadDevice` | board, firmware, capacities, link state, calibration in force |
+| `Device.OpenLink` | |
+| `Device.ReadFirmware` | |
+| `Device.ReadWireLog` · `Device.WatchWire` | the raw wire, both directions |
 
 ### State and stream
 
 | | |
 |---|---|
-| `GET /api/state` | per axis: counts, `position_cm`, `distance_cm`, `velocity_cm_s`; armed and fired zones; link, stale, ring drops, seq gaps |
-| `WS /api/stream?rate_hz=` | decimated state for browsers. Every frame carries **`lost_before`**: samples the daemon never received since the frame before, accumulated across the ones decimation dropped |
-| `POST /api/position/zero` | moves the API origin (never the published accumulator) |
+| `StateService.ReadState` | per axis: counts, `position_cm`, `distance_cm`, `velocity_cm_s`; armed and fired zones; link, stale, ring drops, seq gaps |
+| `StateService.WatchState` | decimated state for browsers. Every frame carries **`lost_before`**: samples the daemon never received since the frame before, accumulated across the ones decimation dropped |
+| `StateService.ZeroPosition` | moves the API origin (never the published accumulator) |
 
 ### Path travelled
 
@@ -723,10 +737,13 @@ mousewheeld does not know what a trial is. It hands out **marks**:
 
 | | |
 |---|---|
-| `POST /api/marks` `{label?}` | → `{mark_id, host_monotonic_ns, counts, position_cm}`. The label is opaque; triald writes `trial 42` |
-| `GET /api/marks/{id}/path?until=now\|<mark_id>&samples=none\|decimated\|full` | summary `{displacement_cm[], distance_cm, duration_ms, max_velocity_cm_s, zone_hits[], seq_gaps}` and optionally the samples |
-| `GET /api/path?from_ns=&to_ns=` | any window still in the ring buffer (default 30 min) |
-| `/api/recording/{start,pause,resume,stop}` · `GET /api/recording/{name}` | as statemachined |
+| `Marks.PlaceMark` `{label?}` | → `{mark_id, host_monotonic_ns, counts, position_cm}`. The label is opaque; triald writes `trial 42` |
+| `Marks.ReadPath` `{mark_id, until, samples}` | summary `{displacement_cm[], distance_cm, duration_ms, max_velocity_cm_s, zone_hits[], seq_gaps}` and optionally the samples |
+| `Marks.ReadWindow` `{from_ns, to_ns}` | any window still in the ring buffer (default 30 min) |
+| `Recording.{Start,Pause,Resume,Stop,Read}` | as statemachined |
+
+Not built, and named as rpcs because that is what they will be — a sixth
+service, authored in `proto/` before any of it is written.
 
 A summary names its own `seq_gaps`. A path with a hole in it says so rather than
 reporting a shorter distance that looks complete.
@@ -735,29 +752,29 @@ reporting a shorter distance that looks complete.
 
 | | |
 |---|---|
-| `GET` / `PUT /api/calibration` | per axis `counts_per_rev`, `diameter_cm` or `counts_per_cm`, `invert` |
-| `POST /api/calibration/measure/start` `{axis, known_distance_cm}` | |
-| `POST /api/calibration/measure/finish` | → measured vs configured |
-| `POST /api/calibration/measure/apply` | persists; recorded as an event |
-| `GET` / `PUT /api/calibration/ball` | **501** — the 2-D skeleton |
+| `Calibration.ReadCalibration` · `ReplaceCalibration` | per axis `counts_per_rev`, `diameter_cm` or `counts_per_cm`, `invert` |
+| `Calibration.StartMeasuring` | names the axis and the distance about to be rolled |
+| `Calibration.FinishMeasuring` | → measured vs configured |
+| `Calibration.ApplyMeasurement` | persists; recorded as an event |
+| `Calibration.ReadBall` · `ReplaceBall` | **`unimplemented`** — the 2-D skeleton |
 
 ### Params
 
 | | |
 |---|---|
-| `GET` / `PATCH /api/config` | stream rate, `display_hz`, device and host velocity windows, ring length, shm name, stale heartbeat period, event port, analog output |
-| `GET /api/lines` | the output line map, read from the rig config. Not writable over the API: wiring is changed where wiring is described |
+| `Config.ReadConfig` · `PatchConfig` | stream rate, `display_hz`, device and host velocity windows, ring length, shm name, stale heartbeat period, event port, analog output |
+| `Config.ReadLines` | the output line map, read from the rig config. Not writable over the API: wiring is changed where wiring is described |
 
 ### Zones
 
 | | |
 |---|---|
-| `GET /api/zone-sets` · `GET` / `PUT /api/zone-sets/{name}` | the store |
-| `POST /api/zone-sets/{name}/validate` | compile against the current calibration and board capacities, without uploading |
-| `POST /api/zones/arm` `{zone_set, patch?, origin, label?}` | resolve `$name`s, compile, upload if changed, wait for `armed`; → `{arm_id}` |
-| `POST /api/zones/save` | write the set on the board, and its armed state, to board flash |
-| `POST /api/zones/disarm` | |
-| `GET /api/zones` | what is armed, what fired, when |
+| `Zones.ListZoneSets` · `ReadZoneSet` / `ReplaceZoneSet` · `ReadZoneSetFile` / `WriteZoneSetFile` | the store, as a message and as the file it is |
+| `Zones.ValidateZoneSet` · `ValidateDraft` · `ValidateZoneSetFile` | compile against the current calibration and board capacities, without uploading |
+| `Zones.Arm` | resolve `$name`s, compile, upload if changed, wait for `armed`; → `{arm_id}` |
+| `Zones.SaveToFlash` | write the set on the board, and its armed state, to board flash |
+| `Zones.Disarm` | |
+| `Zones.ReadArmed` | what is armed, what fired, when |
 
 A zone set is compiled against a calibration. **Changing the calibration marks
 compiled sets stale** and the next arm recompiles; a set armed under one
@@ -849,10 +866,10 @@ Symmetric with interaction A:
   meaning "arm nothing". mousewheeld holds the store and refuses a name it does
   not have, which triald reports as a configuration error. Spelled with the
   prefix on triald's side for the reason `statemachine_graph` is.
-- **At configure:** `POST /api/marks {label}`, then `/api/zones/arm` if a set is
+- **At configure:** a mark, then `Zones.Arm` if a set is
   named.
-- **At the end:** `GET /api/marks/{id}/path` → a **contribution**
-  (`PATCH /api/trial/current`, `source: "mousewheeld"`) carrying the summary and
+- **At the end:** the mark's path → a **contribution**
+  (triald's `source: "mousewheeld"`) carrying the summary and
   a reference to the recording by path and mark id.
 
 Two triald dependencies, both already planned there and neither built: the
@@ -879,7 +896,7 @@ contract. Each is rewritten here to this project's shapes.
 | core (CMake, doctest) | counter extension across wrap, origin and odometer, every zone semantic (edge vs level, once, rearm, hysteresis, wrap, open bounds, two axes), ring drop accounting, framing, JSON refusals, the fixed-format writers |
 | daemon (cargo test) | framing, the sample parser against the firmware's writer output, continuity across reset/reconnect, clock mapping, vinput read-back through vstimd's own reader |
 | daemon integration (cargo test) | against `native` firmware on a pty — whole arm/fire/path cycles with scripted counts, through the HTTP API |
-| Python client (pytest) | against a running daemon with `native` firmware; the client's models checked against `/api/openapi.json` |
+| Python client (pytest) | against a running daemon with `native` firmware; the client is generated from `proto/mousewheeld/v1/`, so there are no models to check against a description |
 | hardware (`make test-hardware`) | scan rate, link cost per line and per command, seq gaps per stream rate, zone TTL latency on a scope pin; a quadrature signal from a second board as the encoder |
 | end to end (contracts) | triald marks and arms, a scripted wheel crosses a zone, statemachined's input sees the TTL, the trial record carries the path |
 

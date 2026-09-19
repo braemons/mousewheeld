@@ -578,6 +578,22 @@ pub struct ZoneSetNames {
     pub zone_sets: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 /// A set's name in the store. A path parameter, never a body.
+/// A zone set as the file it is stored as.
+///
+/// `text` is JSON — the spelling `docs/reference/zone-set.schema.json`
+/// describes, with `"$goal_cm"` for a reference and `"displacement"` for a
+/// metric — and it is carried as text rather than parsed into `ZoneSet` because
+/// the point is the bytes. A file that does not parse still has to travel, with
+/// a cursor position in the refusal; a file that parses must come back spelled
+/// the way it is on disk.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ZoneSetFile {
+    /// Empty when this is a draft that is not in the store yet.
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub text: ::prost::alloc::string::String,
+}
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ZoneSetName {
     #[prost(string, tag = "1")]

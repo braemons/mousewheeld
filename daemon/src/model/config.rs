@@ -190,7 +190,7 @@ impl Default for PublishConfig {
     }
 }
 
-/// `GET /api/config` — the settings a session may change, and the ones it may
+/// `Config.ReadConfig` — the settings a session may change, and the ones it may
 /// only read, in one answer.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct ConfigView {
@@ -211,7 +211,7 @@ pub struct ConfigView {
     pub starves_the_display: bool,
 }
 
-/// `PATCH /api/config`. Absent fields are left alone.
+/// `Config.PatchConfig`. Absent fields are left alone.
 #[derive(Debug, Clone, Default, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ConfigPatch {

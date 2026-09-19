@@ -6,7 +6,7 @@
 // vstimd plots what it read from the shared-memory segment, once a frame,
 // decimated again for its own snapshot stream: the consumer's view, good for
 // "is the camera being driven and is that still true". This one is the
-// device's: it follows `WS /api/stream`, and it can show three things vstimd
+// device's: it follows `StateService.WatchState`, and it can show three things vstimd
 // structurally cannot —
 //
 //   * **device velocity beside host velocity.** The device computes one from
@@ -27,7 +27,7 @@
 // the frame before, and a non-zero one is the break.
 //
 // It is still a monitor and not the record. The path of record is the
-// recording, and a trial's own span comes from `GET /api/marks/{id}/path`.
+// recording, and a trial's own span comes from the mark's path.
 
 import { BasePanelElement, defineElementOnce } from "./base_panel_element.js";
 import { drawEventRules, drawTimeSeries } from "./time_series_chart.js";
@@ -112,7 +112,7 @@ export class TracePanelElement extends BasePanelElement {
       const state = await this.api.readState();
       this.offerAxes((state.axes || []).map((axis) => axis.name));
     });
-    this.followStream(this.api.stateStreamUrl(BROWSER_RATE_HZ), {
+    this.followStream((options) => this.api.followState(BROWSER_RATE_HZ, options), {
       onOpen: () => this.setLink(true),
       onClose: () => this.setLink(false),
       onMessage: (message) => this.absorb(message),

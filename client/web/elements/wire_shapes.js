@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// The browser's half of the convert seam.
+// What a panel reads, once the client has handed it protobuf's JSON mapping.
 //
-// The daemon answers in protobuf's JSON mapping, generated from
-// `proto/mousewheeld/v1/`, and that mapping has three habits a panel should
-// not have to remember:
+// `daemon_api_client.js` converts every answer with `toJson` — the binary
+// gRPC-Web frame never reaches a panel — and that mapping has three habits a
+// panel should not have to remember:
 //
 //   * a 64-bit integer is a **string**, because JSON numbers are doubles and
 //     `counts` would silently lose its last digits above 2^53;
@@ -13,7 +13,7 @@
 //   * a `oneof` is an object with one key, `{"sample": {…}}`, rather than a
 //     discriminator beside flattened fields.
 //
-// Every one of those is right on the wire and wrong in a panel, so the
+// Every one of those is right in an interface and wrong in a panel, so the
 // translation happens here — once — exactly as `daemon/src/convert/` does it on
 // the other side. A panel that reads `frame.sample.seq` in three places is a
 // panel that will be edited in two of them.
@@ -41,9 +41,9 @@ export const actionName = (value) => enumName(value, "OUTPUT_ACTION_");
 export const directionName = (value) => enumName(value, "WIRE_DIRECTION_");
 export const levelName = (value) => enumName(value, "WIRE_LEVEL_");
 
-/// One frame of `WS /api/stream`, flattened to `{kind, …}`.
+/// One frame of `StateService.WatchState`, flattened to `{kind, …}`.
 ///
-/// The socket carries `{"sample": {…}}` or `{"zone_hit": {…}}`; a reader wants
+/// The stream carries `{"sample": {…}}` or `{"zone_hit": {…}}`; a reader wants
 /// to switch on one field. Returns `null` for an arm this build does not know,
 /// which is a frame from a newer daemon and is skipped rather than half-read.
 export function streamFrame(message) {
@@ -59,3 +59,4 @@ export function streamFrame(message) {
 export function bound(value) {
   return value && typeof value.value === "number" ? value.value : null;
 }
+

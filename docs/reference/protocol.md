@@ -80,7 +80,7 @@ conflated, and the names are different for that reason.
 **A consumer of the daemon's own stream must not read loss off `seq`.** The
 daemon decimates for its subscribers, so `seq` skips there by design; what a
 consumer reads is `lost_before`, which only the daemon can compute. See the
-daemon's API, `WS /api/stream`.
+daemon's API, `StateService.WatchState`.
 
 ---
 

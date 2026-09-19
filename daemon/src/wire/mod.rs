@@ -34,5 +34,5 @@ pub mod service {
 ///
 /// How a client discovers what this daemon speaks — every service, every rpc,
 /// argument and return types — without having the `.proto` to hand. It is the
-/// convention `/api/proto` was invented to substitute for.
+/// convention a `/api/proto` route would only be a worse version of.
 pub const DESCRIPTOR: &[u8] = include_bytes!("descriptor_for_reflection.bin");

@@ -26,7 +26,9 @@ pub mod zones;
 use std::sync::Arc;
 
 use axum::http::StatusCode;
-use tonic::Status;
+use prost::Message;
+use tonic::metadata::{MetadataMap, MetadataValue};
+use tonic::{Code, Status};
 
 use crate::daemon_state::Daemon;
 use crate::model::ApiError;
@@ -48,24 +50,42 @@ use crate::model::ApiError;
 /// * `not_found` — no such zone set, no such axis.
 /// * `unimplemented` — designed, modelled, and not built. The 2-D ball.
 ///
-/// `context` — the field or set that needs changing — is appended to the
-/// message rather than dropped, because it is usually the answer.
+/// **The whole refusal also travels as itself.** A status code is a category
+/// and a message is a sentence; `error` — `no_device`, `zone_overflow` — is
+/// the part a client switches on, and `context` names the thing to change. So
+/// `mousewheeld.v1.Error` is encoded into the trailing metadata entry
+/// `mousewheeld-error-bin`, which is what makes `proto/mousewheeld/v1/error.proto`
+/// the one description of a refusal rather than a shape nothing sends.
+///
+/// The message keeps `detail (context)` for everything that has not been told
+/// about the metadata — grpcurl, a log line, a panic in a test.
 pub fn status_of(error: ApiError) -> Status {
     let ApiError { status, body } = error;
+    let code = match status {
+        StatusCode::SERVICE_UNAVAILABLE => Code::Unavailable,
+        StatusCode::CONFLICT => Code::FailedPrecondition,
+        StatusCode::UNPROCESSABLE_ENTITY => Code::InvalidArgument,
+        StatusCode::NOT_FOUND => Code::NotFound,
+        StatusCode::NOT_IMPLEMENTED => Code::Unimplemented,
+        _ => Code::Internal,
+    };
     let message = if body.context.is_empty() {
-        body.detail
+        body.detail.clone()
     } else {
         format!("{} ({})", body.detail, body.context)
     };
-    match status {
-        StatusCode::SERVICE_UNAVAILABLE => Status::unavailable(message),
-        StatusCode::CONFLICT => Status::failed_precondition(message),
-        StatusCode::UNPROCESSABLE_ENTITY => Status::invalid_argument(message),
-        StatusCode::NOT_FOUND => Status::not_found(message),
-        StatusCode::NOT_IMPLEMENTED => Status::unimplemented(message),
-        _ => Status::internal(message),
-    }
+    let mut metadata = MetadataMap::new();
+    metadata.insert_bin(
+        REFUSAL_METADATA_KEY,
+        MetadataValue::from_bytes(&crate::convert::error::error_to_wire(body).encode_to_vec()),
+    );
+    Status::with_metadata(code, message, metadata)
 }
+
+/// Where the typed refusal rides. `-bin` is gRPC's own spelling for a metadata
+/// value that is bytes rather than ASCII, and it is what lets `context` hold a
+/// zone name with a space or a non-ASCII character in it.
+pub const REFUSAL_METADATA_KEY: &str = "mousewheeld-error-bin";
 
 /// One handle, shared by every service. They are five traits on one daemon.
 #[derive(Clone)]
@@ -76,5 +96,75 @@ pub struct Rig {
 impl Rig {
     pub fn new(daemon: Arc<Daemon>) -> Self {
         Self { daemon }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::error::ApiErrorBody;
+
+    /// The refusal a client reads is the one the daemon raised — all three
+    /// fields of it, not a sentence to parse.
+    #[test]
+    fn a_refusal_travels_as_itself_in_the_metadata() {
+        let status = status_of(
+            ApiError::not_found("no_such_zone_set", "no zone set named corridor")
+                .about("corridor".to_string()),
+        );
+
+        assert_eq!(status.code(), Code::NotFound);
+        // The message is for everything that has not been told about the
+        // metadata, so it carries the context too.
+        assert_eq!(status.message(), "no zone set named corridor (corridor)");
+
+        let encoded = status
+            .metadata()
+            .get_bin(REFUSAL_METADATA_KEY)
+            .expect("the typed refusal");
+        let refusal = crate::wire::Error::decode(&encoded.to_bytes().unwrap()[..]).unwrap();
+        assert_eq!(refusal.error, "no_such_zone_set");
+        assert_eq!(refusal.detail, "no zone set named corridor");
+        assert_eq!(refusal.context, "corridor");
+    }
+
+    /// The codes are chosen for what they mean. A caller retries `unavailable`
+    /// unchanged and must never retry the others, so this mapping is the one
+    /// thing about a refusal a client is entitled to act on without reading it.
+    #[test]
+    fn every_category_has_its_own_code() {
+        let code = |error: ApiError| status_of(error).code();
+        assert_eq!(code(ApiError::no_device()), Code::Unavailable);
+        assert_eq!(
+            code(ApiError::conflict("nothing_armed", "arm a set first")),
+            Code::FailedPrecondition
+        );
+        assert_eq!(
+            code(ApiError::refused("bad_zone_set", "it does not compile")),
+            Code::InvalidArgument
+        );
+        assert_eq!(
+            code(ApiError::not_found("no_such_axis", "no axis named ball")),
+            Code::NotFound
+        );
+        assert_eq!(
+            code(ApiError::internal("store_unwritable", "read-only")),
+            Code::Internal
+        );
+    }
+
+    /// An empty `context` is not the string "()" — a refusal whose sentence is
+    /// the whole story says it once.
+    #[test]
+    fn a_refusal_with_no_context_is_just_the_sentence() {
+        let status = status_of(ApiError {
+            status: StatusCode::SERVICE_UNAVAILABLE,
+            body: ApiErrorBody {
+                error: "no_device".into(),
+                detail: "no board attached".into(),
+                context: String::new(),
+            },
+        });
+        assert_eq!(status.message(), "no board attached");
     }
 }

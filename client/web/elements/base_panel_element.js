@@ -4,8 +4,8 @@
 // poll or follow a stream without leaking either, and one honest place for a
 // refusal to land.
 //
-// **Poll by default; open a socket only where the thing is a stream.** A
-// browser tab with five panels open would otherwise hold five sockets against a
+// **Poll by default; open a stream only where the thing is a stream.** A
+// browser tab with five panels open would otherwise hold five streams against a
 // daemon whose whole reason for existing is one serial port. Polling a snapshot
 // at 1 Hz costs a rig nothing and cannot fall behind. Two panels are streams by
 // nature — the trace and the wire monitor — and they say so.
@@ -21,14 +21,25 @@ export class BasePanelElement extends HTMLElement {
     this.root = this.attachShadow({ mode: "open" });
     adoptSharedStyles(this.root);
     this.pollTimers = [];
-    this.openSockets = [];
+    this.openStreams = [];
     this.reconnectTimers = [];
     this.failure = null;
     this.failureIsFromPoll = false;
   }
 
+  /// The client for this panel's `base`, built once.
+  ///
+  /// Cached on the element rather than made per call: a client holds the gRPC
+  /// transport and the five service clients, and a panel that polls once a
+  /// second would otherwise build them all once a second. Keyed by `base` so
+  /// that moving a panel to another rig rebuilds it.
   get api() {
-    return new DaemonApiClient(this.getAttribute("base") || "");
+    const base = this.getAttribute("base") || "";
+    if (this.cachedApi === undefined || this.cachedApiBase !== base) {
+      this.cachedApi = new DaemonApiClient(base);
+      this.cachedApiBase = base;
+    }
+    return this.cachedApi;
   }
 
   connectedCallback() {
@@ -65,21 +76,17 @@ export class BasePanelElement extends HTMLElement {
     for (const timer of this.reconnectTimers) clearTimeout(timer);
     this.pollTimers = [];
     this.reconnectTimers = [];
-    for (const socket of this.openSockets) {
-      socket.onclose = null; // this close is ours, and must not trigger a retry
-      try {
-        socket.close();
-      } catch {
-        /* already closing */
-      }
-    }
-    this.openSockets = [];
+    // Aborting is how a gRPC stream ends from this side. The follower checks
+    // its own signal before treating the resulting throw as a failure, so this
+    // close raises no banner and schedules no retry.
+    for (const stream of this.openStreams) stream.abort();
+    this.openStreams = [];
     this.stopped();
   }
 
   /// Call `read` now and every `seconds`, and never let two overlap.
   ///
-  /// The overlap guard matters: `GET /api/device` reaches the device session,
+  /// The overlap guard matters: `Device.ReadDevice` reaches the device session,
   /// and a panel that fired a second read before the first returned would queue
   /// work behind a board that is answering at its own pace.
   pollEvery(seconds, read) {
@@ -101,45 +108,47 @@ export class BasePanelElement extends HTMLElement {
     return once;
   }
 
-  /// Follow a WebSocket, reconnecting until this panel is taken off the page.
+  /// Follow a server-streaming rpc, reconnecting until this panel is taken off
+  /// the page.
+  ///
+  /// `open` is given the call options and returns the stream —
+  /// `(options) => this.api.followState(5, options)`. The panel names the rpc;
+  /// this holds the retry, the abort and the two callbacks, and `onOpen` fires
+  /// when the daemon accepts the call rather than when a frame arrives: a
+  /// quiet wire is not a broken one.
   ///
   /// A console is left open across the thing it is watching — a rig restarted
   /// between blocks, a daemon upgraded, a cable. A panel that needs a page
   /// reload to notice its daemon came back is a panel somebody stops trusting.
   /// Backoff caps at ten seconds, so a rig that was off all night is picked up
   /// within ten seconds of coming up rather than hammered all night.
-  followStream(url, { onMessage, onOpen, onClose }) {
+  followStream(open, { onMessage, onOpen, onClose }) {
     let attempt = 0;
-    const open = () => {
-      let socket;
+    const follow = async () => {
+      const stream = new AbortController();
+      this.openStreams.push(stream);
       try {
-        socket = new WebSocket(url);
+        const frames = open({
+          signal: stream.signal,
+          onHeader: () => {
+            attempt = 0;
+            this.clearFailure();
+            onOpen?.();
+          },
+        });
+        for await (const frame of frames) onMessage(frame);
       } catch (error) {
-        this.showFailure(error);
-        return;
+        if (!stream.signal.aborted) this.showFailure(error);
+      } finally {
+        this.openStreams = this.openStreams.filter((tracked) => tracked !== stream);
       }
-      this.openSockets.push(socket);
-      socket.onopen = () => {
-        attempt = 0;
-        this.clearFailure();
-        onOpen?.();
-      };
-      socket.onmessage = (event) => {
-        try {
-          onMessage(JSON.parse(event.data));
-        } catch (error) {
-          this.showFailure(error);
-        }
-      };
-      socket.onclose = () => {
-        this.openSockets = this.openSockets.filter((tracked) => tracked !== socket);
-        onClose?.();
-        const wait = Math.min(1000 * 2 ** attempt, 10_000);
-        attempt += 1;
-        this.reconnectTimers.push(setTimeout(open, wait));
-      };
+      if (stream.signal.aborted) return; // the panel went away; do not come back
+      onClose?.();
+      const wait = Math.min(1000 * 2 ** attempt, 10_000);
+      attempt += 1;
+      this.reconnectTimers.push(setTimeout(follow, wait));
     };
-    open();
+    follow();
   }
 
   /// Run one action, showing whatever it refuses with.
@@ -204,9 +213,10 @@ export class BasePanelElement extends HTMLElement {
 
   // ------------------------------------------------------------- markup ---
   //
-  // Built rather than templated. There is no build step and no framework here,
-  // so the alternative is string concatenation into innerHTML — which is how a
-  // zone named `<script>` becomes an execution.
+  // Built rather than templated. There is no framework here — the build step
+  // generates the protobuf client and nothing else — so the alternative is
+  // string concatenation into innerHTML, which is how a zone named `<script>`
+  // becomes an execution.
 
   make(tag, properties = {}, children = []) {
     const node = document.createElement(tag);

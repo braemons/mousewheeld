@@ -6,7 +6,7 @@
 //! `proto/mousewheeld/v1/` now, the handlers speak the types generated from it,
 //! and a second generated description of the same interface is the thing
 //! `contracts/DAEMON_LAYOUT.md` exists to prevent. What a client reads is the
-//! `.proto`, served at `/api/proto`; what a person reads is
+//! `.proto`, which the daemon serves by gRPC reflection; what a person reads is
 //! `docs/reference/api.md`.
 //!
 //! What survives is the part that was never about the API. A zone set is also a

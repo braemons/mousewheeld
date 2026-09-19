@@ -50,6 +50,28 @@ service Zones {
   // it without a daemon running.
   rpc ReadZoneSetSchema(ReadZoneSetSchemaRequest) returns (google.protobuf.Struct);
 
+  // The same three, on the **file** rather than the message.
+  //
+  // A zone set has two spellings and always has: the message above, which a
+  // generated client builds, and the file on disk, which a person edits and
+  // copies between rigs. `ReadZoneSet` gives the first. These give the second,
+  // as the text it is, because an editor with a cursor in it is editing bytes —
+  // and a browser that converted between the two spellings itself would be the
+  // second, looser description of a zone set that this service exists to avoid.
+  //
+  // The daemon parses with its own deserializer, so what comes back is the
+  // refusal a hand-edited file would earn, with the line and column in it.
+  rpc ReadZoneSetFile(ZoneSetName) returns (ZoneSetFile);
+
+  // Parse, compile, and store. Answers with the file as it was written, which
+  // is the canonical spelling — an editor shows what is on disk, not what was
+  // typed at it.
+  rpc WriteZoneSetFile(ZoneSetFile) returns (ZoneSetFile);
+
+  // Parse and compile a file that is not in the store. `name` may be empty:
+  // this is a draft.
+  rpc ValidateZoneSetFile(ZoneSetFile) returns (ValidationReport);
+
   // What is armed, what fired, and where.
   rpc ReadArmed(ReadArmedRequest) returns (ArmedZones);
 
@@ -73,6 +95,20 @@ message ZoneSetNames {
 }
 
 // A set's name in the store. A path parameter, never a body.
+// A zone set as the file it is stored as.
+//
+// `text` is JSON — the spelling `docs/reference/zone-set.schema.json`
+// describes, with `"$goal_cm"` for a reference and `"displacement"` for a
+// metric — and it is carried as text rather than parsed into `ZoneSet` because
+// the point is the bytes. A file that does not parse still has to travel, with
+// a cursor position in the refusal; a file that parses must come back spelled
+// the way it is on disk.
+message ZoneSetFile {
+  // Empty when this is a draft that is not in the store yet.
+  string name = 1;
+  string text = 2;
+}
+
 message ZoneSetName {
   string name = 1;
 }

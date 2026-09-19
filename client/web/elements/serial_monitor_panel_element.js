@@ -127,7 +127,7 @@ export class SerialMonitorPanelElement extends BasePanelElement {
       for (const line of (await this.api.readWireLog()).lines || []) this.absorb(line, false);
       this.paint();
     });
-    this.followStream(this.api.wireStreamUrl(), {
+    this.followStream((options) => this.api.followWire(options), {
       onOpen: () => this.setLink(true),
       onClose: () => this.setLink(false),
       onMessage: (line) => this.absorb(line),

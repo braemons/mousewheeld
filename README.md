@@ -37,15 +37,15 @@ scan that sees the count, and put on a TTL line.
 
 | | |
 |---|---|
-| **The API**, authored | `proto/mousewheeld/v1/` — types *and* rpcs, hand-written and reviewed, served as itself at `/api/proto`. `daemon/src/wire/` is generated from it and committed; `daemon/src/convert/` is the seam to `daemon/src/model/`, which is what the daemon thinks in |
+| **The API**, authored | `proto/mousewheeld/v1/` — types *and* rpcs, hand-written and reviewed. The daemon answers **gRPC server reflection**, so a client discovers every rpc from the running daemon. `daemon/src/wire/` is generated from it and committed; `daemon/src/convert/` is the seam to `daemon/src/model/`, which is what the daemon thinks in |
 | **The wire** | [`docs/reference/protocol.md`](docs/reference/protocol.md), and `daemon/src/link/` — framing, CRC-16/CCITT-FALSE, the typed messages, the clock correlation and the continuity offset that keeps a published accumulator from stepping backwards across a board reset |
 | **The zone-set store and compiler** | centimetres in, integer counts out, against a named calibration |
-| **Calibration**, with its guided measurement | `daemon/src/api/calibration_routes.rs` |
-| **The console panels** | `client/web/elements/` — five custom elements, no build step, served by this daemon at its own version |
+| **Calibration**, with its guided measurement | `daemon/src/grpc/calibration.rs` over `daemon/src/model/calibration.rs` |
+| **The console panels** | `client/web/elements/` — five custom elements served by this daemon at its own version. One generated file among them: `daemon_api_client.js`, the gRPC-Web client, bundled by `make web` and committed so a release build needs no npm |
 | **Publishing to vstimd** | `daemon/src/publish/` — the `vinput` segment, written first of everything a sample causes, in centimetres, through vstimd's own crate pinned at `v0.3.0-alpha1` |
 | **Packaging** | `packaging/` — nfpm, a systemd unit, a udev rule, sysusers |
-| **The API** | [`docs/reference/api.md`](docs/reference/api.md), written by hand — what a route is for and what a refusal means. The interface itself is [`proto/mousewheeld/v1/`](proto/mousewheeld/v1/), served at `/api/proto`, so this document never repeats a field list |
-| **The zone set's schema** | [`docs/reference/zone-set.schema.json`](docs/reference/zone-set.schema.json) — JSON Schema 2020-12, extracted from those types and committed, because a zone set is a *file*: put its URL in a `"$schema"` line and an editor checks it as you type. `make check` fails when it drifts |
+| **The API** | [`docs/reference/api.md`](docs/reference/api.md), written by hand — what an rpc is for and what a refusal means. The interface itself is [`proto/mousewheeld/v1/`](proto/mousewheeld/v1/), so this document never repeats a field list |
+| **The zone set's schema** | [`docs/reference/zone-set.schema.json`](docs/reference/zone-set.schema.json) — JSON Schema 2020-12, extracted from those types and committed, because a zone set is a *file*: point a `"$schema"` line at it and an editor checks it as you type. `make check` fails when it drifts |
 | a board on a pty | `--simulate` — a simulator speaking the protocol on the far end of a real pty, so the daemon runs the link code it will run against a Teensy |
 
 **Not built:** the firmware, the real-time thread's scheduling discipline, the
@@ -89,7 +89,7 @@ restates nothing.
 
 ## Versions
 
-`GET /api/version` reports three numbers that are not the same number: the
+`Device.ReadVersion` reports three numbers that are not the same number: the
 daemon's release, the **API contract's** major version, and the **device
 protocol** — what this daemon sends, the oldest it will talk to, and what the
 attached board greeted with. It also reports the `vinput` layout version, which

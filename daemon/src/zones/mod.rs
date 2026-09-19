@@ -67,25 +67,41 @@ impl ZoneSetStore {
     }
 
     pub fn read(&self, name: &str) -> ApiResult<ZoneSet> {
+        Self::parse(name, &self.read_text(name)?)
+    }
+
+    /// The file as it is on disk, unparsed.
+    ///
+    /// What an editor is editing. A file that does not parse still has to
+    /// reach the person who has to fix it.
+    pub fn read_text(&self, name: &str) -> ApiResult<String> {
         let path = self.path_for(name)?;
-        let text = std::fs::read_to_string(&path).map_err(|_| {
+        std::fs::read_to_string(&path).map_err(|_| {
             ApiError::not_found("no_such_zone_set", format!("no zone set named {name}"))
                 .about(name.to_string())
-        })?;
-        serde_json::from_str(&text).map_err(|e| {
+        })
+    }
+
+    /// One deserializer, for the store and for anything typed at the daemon.
+    pub fn parse(name: &str, text: &str) -> ApiResult<ZoneSet> {
+        serde_json::from_str(text).map_err(|e| {
             // A file somebody edited by hand, refused with the line and column
             // rather than an empty list of zones.
             ApiError::refused("zone_set_unreadable", format!("{name}: {e}")).about(name.to_string())
         })
     }
 
+    /// The canonical text of a set — what `write` puts on disk.
+    pub fn to_text(set: &ZoneSet) -> ApiResult<String> {
+        serde_json::to_string_pretty(set)
+            .map_err(|e| ApiError::internal("zone_set_unserializable", e.to_string()))
+    }
+
     pub fn write(&self, name: &str, set: &ZoneSet) -> ApiResult<()> {
         let path = self.path_for(name)?;
         std::fs::create_dir_all(&self.root)
             .map_err(|e| ApiError::internal("store_unwritable", format!("{}: {e}", self.root.display())))?;
-        let text = serde_json::to_string_pretty(set)
-            .map_err(|e| ApiError::internal("zone_set_unserializable", e.to_string()))?;
-        std::fs::write(&path, text)
+        std::fs::write(&path, Self::to_text(set)?)
             .map_err(|e| ApiError::internal("store_unwritable", format!("{}: {e}", path.display())))
     }
 

@@ -116,7 +116,7 @@ pub struct CalibrationPatch {
 
 // ----------------------------------------------------------- measurement ---
 
-/// `POST /api/calibration/measure/start`.
+/// `Calibration.StartMeasuring`.
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct StartMeasurement {

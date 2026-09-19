@@ -14,7 +14,7 @@ use crate::model::zone_set::{ArmedZones, ValidationReport, ZoneSet, ZoneSetNames
 use crate::model::{ApiError, ApiResult};
 use crate::wire;
 use crate::wire::service::zones_server::{Zones, ZonesServer};
-use crate::zones::compile;
+use crate::zones::{compile, ZoneSetStore};
 
 use super::status_of;
 
@@ -144,6 +144,41 @@ fn save_to_flash_body(daemon: &Arc<Daemon>) -> ApiResult<wire::DeviceInfo> {
     Ok(device_info_to_wire(daemon.device.info(port)))
 }
 
+// ------------------------------------------------------------ as a file ---
+//
+// The same three operations, on the text a person edits. The message spelling
+// and the file spelling are both real and both have to be served; what must not
+// happen is a *third* description of a zone set in a client that converts
+// between them.
+
+fn read_zone_set_file_body(daemon: &Arc<Daemon>, name: &str) -> ApiResult<wire::ZoneSetFile> {
+    Ok(wire::ZoneSetFile {
+        name: name.to_string(),
+        text: daemon.store.read_text(name)?,
+    })
+}
+
+/// Parse, compile, store — and answer with what is now on disk.
+///
+/// The text is not written through: it is parsed and re-serialized, so the
+/// store holds one spelling however the file was typed, and the editor is
+/// filled with the file rather than with what was in it a moment ago.
+fn write_zone_set_file_body(daemon: &Arc<Daemon>, file: wire::ZoneSetFile) -> ApiResult<wire::ZoneSetFile> {
+    let set = ZoneSetStore::parse(&file.name, &file.text)?;
+    daemon.store.write(&file.name, &set)?;
+    read_zone_set_file_body(daemon, &file.name)
+}
+
+/// Compile a file that is not in the store. An unnamed one is a draft.
+fn validate_zone_set_file_body(
+    daemon: &Arc<Daemon>,
+    file: wire::ZoneSetFile,
+) -> ApiResult<wire::ValidationReport> {
+    let name = if file.name.is_empty() { "draft" } else { &file.name };
+    let set = ZoneSetStore::parse(name, &file.text)?;
+    Ok(validation_report_to_wire(report_on(daemon, name, &set)))
+}
+
 // ------------------------------------------------------------- the service ---
 
 #[tonic::async_trait]
@@ -191,6 +226,33 @@ impl Zones for super::Rig {
         request: Request<wire::ZoneSetName>,
     ) -> Result<Response<wire::ValidationReport>, Status> {
         validate_zone_set_body(&self.daemon, &request.into_inner().name)
+            .map(Response::new)
+            .map_err(status_of)
+    }
+
+    async fn read_zone_set_file(
+        &self,
+        request: Request<wire::ZoneSetName>,
+    ) -> Result<Response<wire::ZoneSetFile>, Status> {
+        read_zone_set_file_body(&self.daemon, &request.into_inner().name)
+            .map(Response::new)
+            .map_err(status_of)
+    }
+
+    async fn write_zone_set_file(
+        &self,
+        request: Request<wire::ZoneSetFile>,
+    ) -> Result<Response<wire::ZoneSetFile>, Status> {
+        write_zone_set_file_body(&self.daemon, request.into_inner())
+            .map(Response::new)
+            .map_err(status_of)
+    }
+
+    async fn validate_zone_set_file(
+        &self,
+        request: Request<wire::ZoneSetFile>,
+    ) -> Result<Response<wire::ValidationReport>, Status> {
+        validate_zone_set_file_body(&self.daemon, request.into_inner())
             .map(Response::new)
             .map_err(status_of)
     }
