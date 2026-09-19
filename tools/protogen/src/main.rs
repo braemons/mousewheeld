@@ -26,7 +26,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .to_path_buf();
 
     let proto_root = repository.join("proto");
-    let out_dir = repository.join("daemon/src/wire");
+    // One argument, and only `make check-proto` passes it: generate somewhere
+    // else so the committed tree can be compared against a fresh one. Asking
+    // git whether the tree changed cannot answer for a *new* file — an
+    // untracked one has no diff — and a staleness check that goes quiet the
+    // first time a message is added is worse than none.
+    let out_dir = match std::env::args().nth(1) {
+        Some(elsewhere) => PathBuf::from(elsewhere),
+        None => repository.join("daemon/src/wire"),
+    };
     std::fs::create_dir_all(&out_dir)?;
 
     let files: Vec<PathBuf> = ["calibration", "config", "device", "error", "state", "version", "zones"]

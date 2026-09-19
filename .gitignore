@@ -12,3 +12,12 @@ tools/protogen/target/
 # the bundle at client/web/elements/daemon_api_client.js, which IS committed.
 client/web/node_modules/
 client/web/gen/
+
+# The Python client. The generated stubs under mousewheeld/_proto/ ARE
+# committed — an install needs no protoc — so only the build output goes here.
+client/python/.venv/
+client/python/dist/
+client/python/.pytest_cache/
+client/python/build/
+__pycache__/
+*.egg-info/

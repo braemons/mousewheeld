@@ -8,7 +8,7 @@ PORT ?= 8082
 VERSION ?= $(shell sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
 ARCH ?= amd64
 
-.PHONY: build test check proto check-proto web check-web check-schema check-text run dev schema package clean help
+.PHONY: build test check proto check-proto web check-web client check-schema check-text run dev schema package clean help
 
 help:
 	@sed -n 's/^\([a-z-]*\):.*## \(.*\)/  \1|\2/p' $(MAKEFILE_LIST) | column -t -s '|'
@@ -48,14 +48,15 @@ proto: ## Regenerate daemon/src/wire/ from proto/
 check-proto: ## Fail if the proto does not compile or the generated code is stale
 	@protoc --proto_path=proto --descriptor_set_out=/dev/null \
 	  proto/mousewheeld/v1/*.proto
-	@$(MAKE) --no-print-directory proto
-	@# Only the generated files: `mod.rs` beside them is hand-written, and a
-	@# check that flagged it would fail every time somebody wrote a comment.
-	@git diff --quiet -- daemon/src/wire/mousewheeld.v1.rs daemon/src/wire/service \
-	  daemon/src/wire/descriptor_for_reflection.bin || { \
-	  echo "daemon/src/wire/ is not what proto/ produces — the interface changed:"; \
-	  git --no-pager diff --stat -- daemon/src/wire/mousewheeld.v1.rs daemon/src/wire/service \
-	    daemon/src/wire/descriptor_for_reflection.bin; \
+	@rm -rf target/proto-check
+	@$(CARGO) run --quiet --manifest-path tools/protogen/Cargo.toml -- target/proto-check
+	@# Against a fresh generation rather than against git: a *new* generated
+	@# file is untracked, and `git diff` says nothing about an untracked file.
+	@# `mod.rs` beside them is hand-written and is not generated into the
+	@# scratch tree, so it is not compared — a check that flagged it would fail
+	@# every time somebody wrote a comment.
+	@diff -r --exclude=mod.rs target/proto-check daemon/src/wire || { \
+	  echo "daemon/src/wire/ is not what proto/ produces — the interface changed."; \
 	  echo "run 'make proto' and commit the result with the change that caused it."; \
 	  exit 1; \
 	}
@@ -70,13 +71,21 @@ web: ## Regenerate client/web/elements/daemon_api_client.js from proto/
 	@cd client/web && npm ci --silent --no-audit --no-fund && node build.mjs
 
 check-web: ## Fail if the committed browser client is not what proto/ produces
+	@cp client/web/elements/daemon_api_client.js target/web-check.js 2>/dev/null || true
 	@$(MAKE) --no-print-directory web
-	@git diff --quiet -- client/web/elements/daemon_api_client.js || { \
-	  echo "client/web/elements/daemon_api_client.js is not what proto/ produces:"; \
-	  git --no-pager diff --stat -- client/web/elements/daemon_api_client.js; \
-	  echo "run 'make web' and commit the result with the change that caused it."; \
+	@diff -q target/web-check.js client/web/elements/daemon_api_client.js || { \
+	  echo "client/web/elements/daemon_api_client.js was not what proto/ produces:"; \
+	  diff target/web-check.js client/web/elements/daemon_api_client.js | head -20; \
+	  echo "it has been regenerated — commit it with the change that caused it."; \
 	  exit 1; \
 	}
+
+# The Python client is its own project with its own Makefile, and is not part
+# of `check` for the same reason `check-web` is not: it needs uv, and a network
+# the first time. Its own `check` regenerates its stubs from proto/, typechecks,
+# and runs both suites — the second of which starts a simulated daemon.
+client: ## The Python client's checks: its stubs, ty, and both test suites
+	@$(MAKE) --no-print-directory -C client/python check
 
 # A NUL byte in a source file makes git call it binary, and a binary file has no
 # diff — so it is reviewed by nobody, silently, for as long as it takes somebody
