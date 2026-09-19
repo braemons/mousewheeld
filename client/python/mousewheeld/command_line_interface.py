@@ -6,7 +6,7 @@ that name on every rig this would also be installed on. Two different programs
 answering to one word is a bug report about the wrong one.
 
 **This is a view onto the client, and holds no logic of its own.** Anything it
-can work out, `mousewheeld.Rig` could have; anything it decides would be a
+can work out, `mousewheeld.MousewheeldClient` could have; anything it decides would be a
 second opinion about a rig that already has one.
 """
 
@@ -19,9 +19,9 @@ from collections.abc import Sequence
 from dataclasses import asdict, is_dataclass
 from enum import Enum
 
-from . import Rig
-from ._wire import Refused
-from .types import Sample, ZoneHit
+from . import MousewheeldClient
+from .daemon_refusals import DaemonRefusedTheRequest
+from .api_types import Sample, ZoneHit
 
 
 def _plain(value):
@@ -108,9 +108,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     arguments = parser.parse_args(argv)
 
     try:
-        with Rig(arguments.rig) as rig:
+        with MousewheeldClient(arguments.rig) as rig:
             return _run(rig, arguments)
-    except Refused as refusal:
+    except DaemonRefusedTheRequest as refusal:
         # The refusal names what to change, so print that and not a traceback:
         # a stack trace through generated gRPC code tells a person nothing they
         # can act on.
@@ -122,7 +122,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 130
 
 
-def _run(rig: Rig, arguments) -> int:
+def _run(rig: MousewheeldClient, arguments) -> int:
     command = arguments.command
     if command == "version":
         _print(rig.version())
@@ -183,7 +183,7 @@ def _run(rig: Rig, arguments) -> int:
     return 0
 
 
-def _watch(rig: Rig, arguments) -> None:
+def _watch(rig: MousewheeldClient, arguments) -> None:
     """One JSON object per line, flushed — so a pipe into `jq` prints as it
     goes rather than when the stream ends."""
     seen = 0
@@ -195,7 +195,7 @@ def _watch(rig: Rig, arguments) -> None:
             return
 
 
-def _measure(rig: Rig, arguments) -> None:
+def _measure(rig: MousewheeldClient, arguments) -> None:
     if arguments.step == "start":
         _print(rig.start_measuring(arguments.axis, arguments.cm))
     elif arguments.step == "finish":
@@ -215,7 +215,7 @@ def _patch(pairs: list[str]) -> dict[str, float]:
 
 
 def _origin(absolute: bool):
-    from .types import ArmOrigin
+    from .api_types import ArmOrigin
 
     return ArmOrigin.ABSOLUTE if absolute else ArmOrigin.CURRENT
 

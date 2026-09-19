@@ -2,7 +2,8 @@
 """What this client hands back, and what it takes.
 
 **No protobuf message is ever returned from this package, and none is
-accepted.** The generated types live in `mousewheeld._proto`, `_convert.py` is
+accepted.** The generated types live in `mousewheeld._proto`,
+`_wire_conversions.py` is
 the seam, and everything here is a frozen dataclass or an enum. That is the
 family's rule (`contracts/DAEMON_LAYOUT.md`): the interface is authored in
 `proto/mousewheeld/v1/`, generated code implements it, and a caller writing an
@@ -100,7 +101,7 @@ class VersionReport:
 
 
 @dataclass(frozen=True)
-class Capacities:
+class BoardCapacities:
     """What the board can hold. A zone set that does not fit is refused here
     rather than half-uploaded."""
 
@@ -117,7 +118,7 @@ class FlashedZoneSet:
 
 
 @dataclass(frozen=True)
-class LinkStats:
+class LinkStatistics:
     connection_count: int
     last_error: str | None
 
@@ -130,9 +131,9 @@ class DeviceInfo:
     firmware_version: str
     protocol_version: int
     uptime_device_us: int
-    capacities: Capacities
+    capacities: BoardCapacities
     flashed_zone_set: FlashedZoneSet | None
-    link: LinkStats
+    link: LinkStatistics
 
 
 @dataclass(frozen=True)
@@ -316,7 +317,7 @@ class MeasurementApplied:
 
 
 @dataclass(frozen=True)
-class Reference:
+class ZoneBoundReference:
     """A bound that is filled in at arm time — `$goal_cm` in a zone-set file.
 
     A separate type rather than a bare string so that a bound is never a number
@@ -329,7 +330,7 @@ class Reference:
 
 
 #: An authored bound: a distance, a value supplied at arm, or an open end.
-Bound = float | Reference | None
+ZoneBound = float | ZoneBoundReference | None
 
 
 @dataclass(frozen=True)
@@ -346,8 +347,8 @@ class Zone:
     metric: ZoneMetric
     output: ZoneOutput
     shape: ZoneShape = ZoneShape.RECT
-    min_cm: tuple[Bound, ...] = ()
-    max_cm: tuple[Bound, ...] = ()
+    min_cm: tuple[ZoneBound, ...] = ()
+    max_cm: tuple[ZoneBound, ...] = ()
     wrap_cm: float | None = None
     fire: FireRule = FireRule.ONCE
     hysteresis_cm: float | None = None
@@ -417,8 +418,13 @@ class ValidationReport:
 
 
 @dataclass(frozen=True)
-class ConfigView:
+class DaemonConfig:
     """The settings a session may change, and the facts it may not.
+
+    **Not the rig config**, which is the file describing the hardware —
+    `/etc/braemons/mousewheeld-rig-config.toml`, changed when the wiring is.
+    This is what the daemon is doing right now, some of it read from that file
+    and some of it changeable over the API.
 
     `shm_open` and `shm_writes` are the pair worth reading: a name in a config
     file and a mapped segment are different things, and the difference is the

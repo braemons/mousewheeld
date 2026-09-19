@@ -14,7 +14,7 @@ use crate::wire;
 use crate::wire::service::state_service_server::{StateService, StateServiceServer};
 
 #[tonic::async_trait]
-impl StateService for super::Rig {
+impl StateService for super::DaemonServices {
     async fn read_state(
         &self,
         _request: Request<wire::ReadStateRequest>,
@@ -80,6 +80,6 @@ impl StateService for super::Rig {
     }
 }
 
-pub fn server(rig: super::Rig) -> StateServiceServer<super::Rig> {
-    StateServiceServer::new(rig)
+pub fn server(services: super::DaemonServices) -> StateServiceServer<super::DaemonServices> {
+    StateServiceServer::new(services)
 }

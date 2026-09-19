@@ -182,7 +182,7 @@ fn validate_zone_set_file_body(
 // ------------------------------------------------------------- the service ---
 
 #[tonic::async_trait]
-impl Zones for super::Rig {
+impl Zones for super::DaemonServices {
     async fn list_zone_sets(
         &self,
         _request: Request<wire::ListZoneSetsRequest>,
@@ -301,6 +301,6 @@ impl Zones for super::Rig {
     }
 }
 
-pub fn server(rig: super::Rig) -> ZonesServer<super::Rig> {
-    ZonesServer::new(rig)
+pub fn server(services: super::DaemonServices) -> ZonesServer<super::DaemonServices> {
+    ZonesServer::new(services)
 }

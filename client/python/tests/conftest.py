@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from mousewheeld import Rig
+from mousewheeld import MousewheeldClient
 
 #: Built by `cargo build --release` in the repository root, two levels up.
 DAEMON = Path(__file__).resolve().parents[3] / "target" / "release" / "mousewheeld"
@@ -32,7 +32,7 @@ def a_free_port() -> int:
 
 
 @pytest.fixture(scope="session")
-def rig():
+def wheel():
     if not DAEMON.exists():
         pytest.skip(f"no daemon at {DAEMON} — run `cargo build --release` first")
 
@@ -57,7 +57,7 @@ def rig():
             stderr=subprocess.DEVNULL,
         )
         try:
-            client = Rig(f"127.0.0.1:{port}")
+            client = MousewheeldClient(f"127.0.0.1:{port}")
             client.wait_until_ready(timeout_s=10)
             # The link opens on its own, but the first sample takes a moment to
             # arrive; a test that read the state immediately would see a rig
@@ -70,7 +70,7 @@ def rig():
             daemon.wait(timeout=5)
 
 
-def _wait_for_a_sample(client: Rig, timeout_s: float = 5.0) -> None:
+def _wait_for_a_sample(client: MousewheeldClient, timeout_s: float = 5.0) -> None:
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         state = client.state()
@@ -81,8 +81,8 @@ def _wait_for_a_sample(client: Rig, timeout_s: float = 5.0) -> None:
 
 
 @pytest.fixture
-def disarmed(rig):
+def disarmed(wheel):
     """Nothing armed before the test, and nothing left armed after it."""
-    rig.disarm()
-    yield rig
-    rig.disarm()
+    wheel.disarm()
+    yield wheel
+    wheel.disarm()

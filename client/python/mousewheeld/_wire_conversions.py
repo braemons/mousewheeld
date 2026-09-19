@@ -21,30 +21,30 @@ from google.protobuf.message import Message
 
 from mousewheeld.v1 import calibration_pb2, config_pb2, device_pb2, state_pb2, version_pb2, zones_pb2  # ty: ignore[unresolved-import]  (resolved at runtime by __init__'s __path__)
 
-from .types import (
+from .api_types import (
     ArmedZones,
     ArmOrigin,
     AxisCalibration,
     AxisCalibrationPatch,
     AxisState,
     BallCalibration,
-    Bound,
+    ZoneBound,
     Calibration,
-    Capacities,
-    ConfigView,
+    BoardCapacities,
+    DaemonConfig,
     DeviceInfo,
     DeviceProtocol,
     FireRule,
     FirmwareVersions,
     FlashedZoneSet,
     LinkHealth,
-    LinkStats,
+    LinkStatistics,
     MeasurementApplied,
     MeasurementResult,
     MeasurementStarted,
     OutputAction,
     OutputLine,
-    Reference,
+    ZoneBoundReference,
     RigState,
     Sample,
     StreamFrame,
@@ -151,7 +151,7 @@ def device_info_from_wire(message: device_pb2.DeviceInfo) -> DeviceInfo:
         firmware_version=message.firmware_version,
         protocol_version=message.protocol_version,
         uptime_device_us=message.uptime_device_us,
-        capacities=Capacities(
+        capacities=BoardCapacities(
             n_axes=message.capacities.n_axes,
             max_zones=message.capacities.max_zones,
             max_lines=message.capacities.max_lines,
@@ -160,7 +160,7 @@ def device_info_from_wire(message: device_pb2.DeviceInfo) -> DeviceInfo:
         flashed_zone_set=(
             None if flashed is None else FlashedZoneSet(name=flashed.name, version=flashed.version)
         ),
-        link=LinkStats(
+        link=LinkStatistics(
             connection_count=message.link.connection_count,
             last_error=_maybe(message.link, "last_error"),
         ),
@@ -323,19 +323,19 @@ def measurement_applied_from_wire(
 # ------------------------------------------------------------------- zones ---
 
 
-def bound_from_wire(message: zones_pb2.ZoneBound) -> Bound:
+def bound_from_wire(message: zones_pb2.ZoneBound) -> ZoneBound:
     arm = message.WhichOneof("bound")
     if arm == "value":
         return message.value
     if arm == "reference":
-        return Reference(message.reference)
+        return ZoneBoundReference(message.reference)
     return None  # an open end: protobuf has no nullable double in a repeated field
 
 
-def bound_to_wire(bound: Bound) -> zones_pb2.ZoneBound:
+def bound_to_wire(bound: ZoneBound) -> zones_pb2.ZoneBound:
     if bound is None:
         return zones_pb2.ZoneBound()
-    if isinstance(bound, Reference):
+    if isinstance(bound, ZoneBoundReference):
         return zones_pb2.ZoneBound(reference=bound.name)
     return zones_pb2.ZoneBound(value=float(bound))
 
@@ -449,8 +449,8 @@ def validation_report_from_wire(message: zones_pb2.ValidationReport) -> Validati
 # ------------------------------------------------------------------ config ---
 
 
-def config_from_wire(message: config_pb2.ConfigView) -> ConfigView:
-    return ConfigView(
+def config_from_wire(message: config_pb2.DaemonConfig) -> DaemonConfig:
+    return DaemonConfig(
         rate_hz=message.rate_hz,
         display_hz=message.display_hz,
         ring_minutes=message.ring_minutes,

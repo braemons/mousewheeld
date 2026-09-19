@@ -272,7 +272,7 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
 // measurement procedure.
 
 #[tonic::async_trait]
-impl Calibration for super::Rig {
+impl Calibration for super::DaemonServices {
     async fn read_calibration(
         &self,
         _request: Request<wire::ReadCalibrationRequest>,
@@ -331,6 +331,6 @@ impl Calibration for super::Rig {
     }
 }
 
-pub fn server(rig: super::Rig) -> CalibrationServer<super::Rig> {
-    CalibrationServer::new(rig)
+pub fn server(services: super::DaemonServices) -> CalibrationServer<super::DaemonServices> {
+    CalibrationServer::new(services)
 }

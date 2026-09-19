@@ -3,13 +3,13 @@
 The locomotion daemon's API, as Python types.
 
 ```python
-from mousewheeld import Rig
+from mousewheeld import MousewheeldClient
 
-with Rig("rig.local") as rig:
-    rig.open_link()
-    rig.arm("goal", patch={"goal_cm": 180})
+with MousewheeldClient("rig.local") as wheel:
+    wheel.open_link()
+    wheel.arm("goal", patch={"goal_cm": 180})
 
-    for frame in rig.watch_state(rate_hz=50):
+    for frame in wheel.watch_state(rate_hz=50):
         print(frame.axes[0].position_cm)
 ```
 
@@ -17,10 +17,15 @@ Speaks gRPC to a daemon that owns a wheel. The interface it speaks is authored
 by hand in that daemon's `proto/mousewheeld/v1/` — types *and* rpcs — and this
 package is generated from it and then hidden behind types of its own.
 
+The class is `MousewheeldClient` and not `Rig`, because a rig has four daemons
+on it and a script that talks to two of them has to be able to say which is
+which. Every client in this family is named after the daemon it speaks to.
+
 ## No protobuf types come out of this package, and none go in
 
 The generated code lives in `mousewheeld._proto`, which is private;
-`mousewheeld.types` is the vocabulary and `mousewheeld._convert` is the seam.
+`mousewheeld.api_types` is the vocabulary and `mousewheeld._wire_conversions` is
+the seam.
 Somebody writing a session should not have to learn a generated API to read a
 number, and this package can keep a name on the day the interface adds a field.
 
@@ -41,14 +46,14 @@ It buys three things you notice within a page of writing a script:
 
 ## Refusals
 
-`Refused` carries four things, and the one to branch on is `error`:
+`DaemonRefusedTheRequest` carries four things, and the one to branch on is `error`:
 
 ```python
-from mousewheeld import Refused
+from mousewheeld import DaemonRefusedTheRequest
 
 try:
-    rig.arm("goal")
-except Refused as refusal:
+    wheel.arm("goal")
+except DaemonRefusedTheRequest as refusal:
     refusal.error     # 'unresolved_reference' — stable, machine-readable
     refusal.detail    # '$goal_cm is not in the arm patch'
     refusal.context   # 'goal' — what to change
@@ -56,9 +61,9 @@ except Refused as refusal:
 ```
 
 The first three come from `mousewheeld.v1.Error` in the call's trailing
-metadata, not from parsing the sentence. `NotConnected` is the subclass for
-`unavailable` — a daemon that is not up yet, a board not plugged in — and it is
-the only refusal `retryable` is true for: everything else is asking you to
+metadata, not from parsing the sentence. `DaemonOrBoardIsUnavailable` is the
+subclass for `unavailable` — a daemon that is not up yet, a board not plugged
+in — and it is the only refusal `retryable` is true for: everything else is asking you to
 change something, and a loop that retried it would hammer a rig about a typo.
 
 ## A command line, too

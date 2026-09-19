@@ -15,7 +15,7 @@ use crate::wire;
 use crate::wire::service::config_server::{Config, ConfigServer};
 
 #[tonic::async_trait]
-impl Config for super::Rig {
+impl Config for super::DaemonServices {
     async fn read_config(
         &self,
         _request: Request<wire::ReadConfigRequest>,
@@ -72,7 +72,7 @@ impl Config for super::Rig {
     }
 }
 
-impl super::Rig {
+impl super::DaemonServices {
     /// The settings a session may change and the ones it may only read, joined
     /// with what the publisher is actually doing.
     fn view(&self) -> ConfigView {
@@ -92,6 +92,6 @@ impl super::Rig {
     }
 }
 
-pub fn server(rig: super::Rig) -> ConfigServer<super::Rig> {
-    ConfigServer::new(rig)
+pub fn server(services: super::DaemonServices) -> ConfigServer<super::DaemonServices> {
+    ConfigServer::new(services)
 }

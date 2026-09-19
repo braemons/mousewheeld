@@ -22,7 +22,7 @@ dependencies = [
 ]
 
 [project.scripts]
-mousewheel = "mousewheeld.cli:main"
+mousewheel = "mousewheeld.command_line_interface:main"
 
 [dependency-groups]
 dev = [

@@ -17,7 +17,7 @@ use crate::wire;
 use crate::wire::service::device_server::{Device, DeviceServer};
 
 #[tonic::async_trait]
-impl Device for super::Rig {
+impl Device for super::DaemonServices {
     async fn read_version(
         &self,
         _request: Request<wire::ReadVersionRequest>,
@@ -92,6 +92,6 @@ impl Device for super::Rig {
     }
 }
 
-pub fn server(rig: super::Rig) -> DeviceServer<super::Rig> {
-    DeviceServer::new(rig)
+pub fn server(services: super::DaemonServices) -> DeviceServer<super::DaemonServices> {
+    DeviceServer::new(services)
 }

@@ -87,13 +87,17 @@ pub fn status_of(error: ApiError) -> Status {
 /// zone name with a space or a non-ASCII character in it.
 pub const REFUSAL_METADATA_KEY: &str = "mousewheeld-error-bin";
 
-/// One handle, shared by every service. They are five traits on one daemon.
+/// The five services, on one daemon.
+///
+/// Named for what it is rather than for the thing it serves: it is not a rig —
+/// a rig has four daemons on it — it is this daemon's implementation of every
+/// service `proto/mousewheeld/v1/` declares. One handle, five traits.
 #[derive(Clone)]
-pub struct Rig {
+pub struct DaemonServices {
     pub daemon: Arc<Daemon>,
 }
 
-impl Rig {
+impl DaemonServices {
     pub fn new(daemon: Arc<Daemon>) -> Self {
         Self { daemon }
     }

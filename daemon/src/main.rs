@@ -215,14 +215,14 @@ fn serve(port: u16, bind: String, rig_config: PathBuf, storage_dir: PathBuf, sim
         // router, which merges with the one serving the panels. Each service
         // registers its own path — `/mousewheeld.v1.Zones/…` — so no route is
         // written down anywhere and renaming a service in the `.proto` moves it.
-        let rig = grpc::Rig::new(daemon.clone());
-        let mut services = tonic::service::Routes::builder();
-        services
-            .add_service(grpc::device::server(rig.clone()))
-            .add_service(grpc::state::server(rig.clone()))
-            .add_service(grpc::calibration::server(rig.clone()))
-            .add_service(grpc::zones::server(rig.clone()))
-            .add_service(grpc::config::server(rig));
+        let daemon_services = grpc::DaemonServices::new(daemon.clone());
+        let mut routes = tonic::service::Routes::builder();
+        routes
+            .add_service(grpc::device::server(daemon_services.clone()))
+            .add_service(grpc::state::server(daemon_services.clone()))
+            .add_service(grpc::calibration::server(daemon_services.clone()))
+            .add_service(grpc::zones::server(daemon_services.clone()))
+            .add_service(grpc::config::server(daemon_services));
 
         // Both reflection versions: clients disagree about which to ask for,
         // and grpcurl and Python's reflection database still want v1alpha.
@@ -234,14 +234,13 @@ fn serve(port: u16, bind: String, rig_config: PathBuf, storage_dir: PathBuf, sim
             .register_encoded_file_descriptor_set(mousewheeld::wire::DESCRIPTOR)
             .build_v1alpha()
             .expect("the descriptor set this binary was built from");
-        let mut services = services;
-        services.add_service(reflection).add_service(reflection_alpha);
+        routes.add_service(reflection).add_service(reflection_alpha);
 
         // gRPC-Web on the whole stack rather than per service: the layer only
         // acts on requests that arrive with a gRPC-Web content type, so the
         // panels pass through it untouched.
         let app = web::router(daemon).merge(
-            services
+            routes
                 .routes()
                 .into_axum_router()
                 .layer(tonic_web::GrpcWebLayer::new()),

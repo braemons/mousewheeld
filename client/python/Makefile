@@ -47,7 +47,7 @@ test: ## Everything: the seam with no daemon, and the client against one
 	@$(UV) run --group dev pytest -q
 
 test-unit: ## Only the seam — no daemon, no network
-	@$(UV) run --group dev pytest -q tests/test_convert.py
+	@$(UV) run --group dev pytest -q tests/test_convert_seam.py
 
 typecheck: ## ty
 	@$(UV) run --group dev ty check mousewheeld tests

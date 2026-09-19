@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""`Rig` — one handle on one mousewheeld.
+"""`MousewheeldClient` — one handle on one mousewheeld.
 
 Methods are named for what they ask for, not for their rpcs, and they take and
-return the types in `mousewheeld.types`. The five services are an arrangement
+return the types in `mousewheeld.api_types`. The five services are an arrangement
 of the interface, not of a caller's day: somebody writing a session wants
 `rig.arm(...)` and `rig.state()`, not to know that one lives on `Zones` and the
 other on `StateService`.
@@ -28,15 +28,16 @@ from mousewheeld.v1 import (  # ty: ignore[unresolved-import]  (resolved at runt
     zones_pb2_grpc,
 )
 
-from . import _convert as convert
-from ._wire import Refused, call, stream
-from .types import (
+from . import _wire_conversions as convert
+from ._grpc_transport import call, stream
+from .daemon_refusals import DaemonRefusedTheRequest
+from .api_types import (
     ArmedZones,
     ArmOrigin,
     AxisCalibrationPatch,
     BallCalibration,
     Calibration,
-    ConfigView,
+    DaemonConfig,
     DeviceInfo,
     FirmwareVersions,
     MeasurementApplied,
@@ -56,15 +57,20 @@ from .types import (
 DEFAULT_PORT = 8082
 
 
-class Rig:
-    """The daemon that owns one wheel.
+class MousewheeldClient:
+    """One handle on the daemon that owns one wheel.
+
+    Named for what it is — a client — rather than for the rig: a rig has four
+    daemons on it, and a script that talks to two of them should be able to say
+    which is which. Every client in this family is spelled the same way, after
+    the daemon it speaks to.
 
     ::
 
-        with Rig("rig.local") as rig:
-            rig.open_link()
-            rig.arm("goal", patch={"goal_cm": 180})
-            for frame in rig.watch_state(rate_hz=50):
+        with MousewheeldClient("rig.local") as wheel:
+            wheel.open_link()
+            wheel.arm("goal", patch={"goal_cm": 180})
+            for frame in wheel.watch_state(rate_hz=50):
                 ...
 
     A bare host name gets the default port, because every rig in this family
@@ -83,7 +89,7 @@ class Rig:
         self._zones = zones_pb2_grpc.ZonesStub(self._channel)
         self._config = config_pb2_grpc.ConfigStub(self._channel)
 
-    def __enter__(self) -> Rig:
+    def __enter__(self) -> MousewheeldClient:
         return self
 
     def __exit__(
@@ -132,7 +138,7 @@ class Rig:
         """Open the serial port named in the rig config and greet the board.
 
         Idempotent: a connected daemon answers with what is already there.
-        Raises `NotConnected` when the port is not openable.
+        Raises `DaemonOrBoardIsUnavailable` when the port is not openable.
         """
         return convert.device_info_from_wire(
             call(lambda: self._device.OpenLink(device_pb2.OpenLinkRequest()))
@@ -205,7 +211,7 @@ class Rig:
         )
 
     def ball(self) -> BallCalibration:
-        """The 2-D ball. `Refused` with `unimplemented` until the hardware
+        """The 2-D ball. `DaemonRefusedTheRequest` with `unimplemented` until the hardware
         exists — modelled so that adding it is filling in rather than
         redesigning."""
         return convert.ball_from_wire(
@@ -376,7 +382,7 @@ class Rig:
 
     # --------------------------------------------------------------- config ---
 
-    def config(self) -> ConfigView:
+    def config(self) -> DaemonConfig:
         return convert.config_from_wire(
             call(lambda: self._config.ReadConfig(config_pb2.ReadConfigRequest()))
         )
@@ -387,7 +393,7 @@ class Rig:
         rate_hz: int | None = None,
         display_hz: int | None = None,
         ring_minutes: int | None = None,
-    ) -> ConfigView:
+    ) -> DaemonConfig:
         """Change what was named. `rate_hz` should be above `display_hz`, or
         some frames see no new sample and the next sees two — the daemon says so
         in `starves_the_display` rather than refusing."""
@@ -402,4 +408,4 @@ class Rig:
         )
 
 
-__all__ = ["DEFAULT_PORT", "Refused", "Rig"]
+__all__ = ["DEFAULT_PORT", "DaemonRefusedTheRequest", "MousewheeldClient"]

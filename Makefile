@@ -68,7 +68,7 @@ check-proto: ## Fail if the proto does not compile or the generated code is stal
 # `npm ci` installs exactly what package-lock.json pins, so the bundle is
 # reproducible; `make check-web` is what holds it to the proto.
 web: ## Regenerate client/web/elements/daemon_api_client.js from proto/
-	@cd client/web && npm ci --silent --no-audit --no-fund && node build.mjs
+	@cd client/web && npm ci --silent --no-audit --no-fund && node build_daemon_api_client.mjs
 
 check-web: ## Fail if the committed browser client is not what proto/ produces
 	@cp client/web/elements/daemon_api_client.js target/web-check.js 2>/dev/null || true

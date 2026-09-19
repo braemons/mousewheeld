@@ -3,20 +3,20 @@
 
 These are the tests the guiding principle asks for: the API is defined in one
 place and strongly typed, so what this client makes of it can be checked
-without a rig. Everything here is `_convert` against the generated types.
+without a rig. Everything here is `_wire_conversions` against the generated types.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from mousewheeld import _convert as convert
-from mousewheeld.types import (
+from mousewheeld import _wire_conversions as convert
+from mousewheeld.api_types import (
     ArmOrigin,
     AxisCalibrationPatch,
     FireRule,
     OutputAction,
-    Reference,
+    ZoneBoundReference,
     Sample,
     Zone,
     ZoneHit,
@@ -37,7 +37,7 @@ def a_zone_set() -> ZoneSet:
                 axes=("wheel",),
                 metric=ZoneMetric.DISPLACEMENT,
                 shape=ZoneShape.RECT,
-                min_cm=(Reference("goal_cm"),),
+                min_cm=(ZoneBoundReference("goal_cm"),),
                 max_cm=(None,),
                 fire=FireRule.ONCE,
                 output=ZoneOutput(line="zone_goal", action=OutputAction.PULSE, ms=10),
@@ -69,7 +69,7 @@ def test_the_three_kinds_of_bound_are_three_different_things():
     """A distance, a value supplied at arm, and an open end. protobuf has no
     nullable double inside a repeated field, so all three are the same shape on
     the wire and only the `oneof` arm tells them apart."""
-    for bound in (30.0, Reference("goal_cm"), None):
+    for bound in (30.0, ZoneBoundReference("goal_cm"), None):
         assert convert.bound_from_wire(convert.bound_to_wire(bound)) == bound
 
     assert convert.bound_from_wire(zones_pb2.ZoneBound()) is None

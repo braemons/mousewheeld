@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""The channel, and the one place a gRPC failure becomes this package's own.
+"""The gRPC channel, and the one place a transport failure becomes a refusal.
 
 Nothing above this imports grpc, and nothing below it knows what a zone is.
+The refusals themselves are `daemon_refusals.py`, because those are public and
+this is not.
 """
 
 from __future__ import annotations
@@ -13,58 +15,13 @@ import grpc
 
 from mousewheeld.v1 import error_pb2  # ty: ignore[unresolved-import]  (resolved at runtime by __init__'s __path__)
 
+from .daemon_refusals import DaemonOrBoardIsUnavailable, DaemonRefusedTheRequest
+
 #: Where the daemon puts the refusal as itself. See `daemon/src/grpc/mod.rs`.
 REFUSAL_METADATA_KEY = "mousewheeld-error-bin"
 
 
-class Refused(Exception):
-    """The daemon refused, and said what to change.
-
-    Four things, and all four are worth having:
-
-    * `error` — stable and machine-readable: `no_device`, `no_such_zone_set`,
-      `unresolved_reference`. **This is the one to branch on.** It is additive
-      within an API major version: new codes appear, none change meaning.
-    * `detail` — one sentence, for a person.
-    * `context` — *what to change*: the zone set's name, the field that did not
-      fit. Usually the answer.
-    * `status` — the gRPC code, as its own name. The category rather than the
-      case, and the one thing a caller may act on without reading the rest:
-      `unavailable` means nothing about the request is wrong and it will work
-      when the link comes back.
-
-    The first three come from `mousewheeld.v1.Error` in the call's trailing
-    metadata, not from parsing `detail`: a client that reads a sentence to find
-    out which refusal it was breaks when the sentence is reworded.
-    """
-
-    def __init__(self, status: str, error: str, detail: str, context: str = "") -> None:
-        super().__init__(f"{error}: {detail}" + (f" ({context})" if context else ""))
-        self.status = status
-        self.error = error
-        self.detail = detail
-        self.context = context
-
-    @property
-    def retryable(self) -> bool:
-        """Whether retrying the identical request could work.
-
-        Only `unavailable`. Everything else is a request to change something,
-        and a loop that retried them would hammer a daemon about a typo.
-        """
-        return self.status == "unavailable"
-
-
-class NotConnected(Refused):
-    """`unavailable` — the daemon is not there, or no board is.
-
-    Its own class because it is the one a rig script legitimately waits on: a
-    daemon starting, a board being plugged in. Everything else is a refusal to
-    fix rather than to wait out.
-    """
-
-
-def refusal_of(error: grpc.RpcError) -> Refused:
+def refusal_of(error: grpc.RpcError) -> DaemonRefusedTheRequest:
     """A gRPC failure, as this package's refusal.
 
     A call that never landed — no daemon, a closed channel, a deadline — has no
@@ -76,7 +33,7 @@ def refusal_of(error: grpc.RpcError) -> Refused:
     body = _typed_refusal(error)
     if body is None:
         body = error_pb2.Error(error=status, detail=detail)
-    kind = NotConnected if status == "unavailable" else Refused
+    kind = DaemonOrBoardIsUnavailable if status == "unavailable" else DaemonRefusedTheRequest
     return kind(status, body.error, body.detail, body.context)
 
 

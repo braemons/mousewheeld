@@ -6,7 +6,7 @@
   "license": "AGPL-3.0-or-later",
   "description": "Build step for the console panels: protobuf-es + gRPC-Web, bundled into elements/daemon_api_client.js.",
   "scripts": {
-    "build": "node build.mjs"
+    "build": "node build_daemon_api_client.mjs"
   },
   "devDependencies": {
     "@bufbuild/protobuf": "^2.15.0",

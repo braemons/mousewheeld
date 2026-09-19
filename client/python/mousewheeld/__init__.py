@@ -3,17 +3,18 @@
 
 Speaks gRPC to a daemon that owns a wheel, and hands back types::
 
-    from mousewheeld import Rig
+    from mousewheeld import MousewheeldClient
 
-    with Rig("rig.local") as rig:
+    with MousewheeldClient("rig.local") as rig:
         rig.open_link()
         rig.arm("goal", patch={"goal_cm": 180})
         for frame in rig.watch_state(rate_hz=50):
             print(frame.axes[0].position_cm)
 
 **No protobuf type is exported from this package, and none is accepted.** The
-generated code is private, in `mousewheeld._proto`; `mousewheeld.types` is the
-public vocabulary and `mousewheeld._convert` is the seam between them. A caller
+generated code is private, in `mousewheeld._proto`; `mousewheeld.api_types` is
+the public vocabulary and `mousewheeld._wire_conversions` is the seam between
+them. A caller
 writing an experiment should never have to learn a generated API to read a
 number — and this package can keep a name the day the interface adds a field.
 
@@ -31,32 +32,32 @@ import os as _os
 
 __path__ = list(__path__) + [_os.path.join(_os.path.dirname(__file__), "_proto", "mousewheeld")]
 
-from ._wire import NotConnected, Refused  # noqa: E402
-from .client import DEFAULT_PORT, Rig  # noqa: E402
-from .types import (  # noqa: E402
+from .daemon_refusals import DaemonOrBoardIsUnavailable, DaemonRefusedTheRequest  # noqa: E402
+from .daemon_client import DEFAULT_PORT, MousewheeldClient  # noqa: E402
+from .api_types import (  # noqa: E402
     ArmedZones,
     ArmOrigin,
     AxisCalibration,
     AxisCalibrationPatch,
     AxisState,
     BallCalibration,
-    Bound,
+    ZoneBound,
     Calibration,
-    Capacities,
-    ConfigView,
+    BoardCapacities,
+    DaemonConfig,
     DeviceInfo,
     DeviceProtocol,
     FireRule,
     FirmwareVersions,
     FlashedZoneSet,
     LinkHealth,
-    LinkStats,
+    LinkStatistics,
     MeasurementApplied,
     MeasurementResult,
     MeasurementStarted,
     OutputAction,
     OutputLine,
-    Reference,
+    ZoneBoundReference,
     RigState,
     Sample,
     StreamFrame,
@@ -83,26 +84,26 @@ __all__ = [
     "AxisCalibrationPatch",
     "AxisState",
     "BallCalibration",
-    "Bound",
+    "ZoneBound",
     "Calibration",
-    "Capacities",
-    "ConfigView",
+    "BoardCapacities",
+    "DaemonConfig",
     "DeviceInfo",
     "DeviceProtocol",
     "FireRule",
     "FirmwareVersions",
     "FlashedZoneSet",
     "LinkHealth",
-    "LinkStats",
+    "LinkStatistics",
     "MeasurementApplied",
     "MeasurementResult",
     "MeasurementStarted",
-    "NotConnected",
+    "DaemonOrBoardIsUnavailable",
     "OutputAction",
     "OutputLine",
-    "Reference",
-    "Refused",
-    "Rig",
+    "ZoneBoundReference",
+    "DaemonRefusedTheRequest",
+    "MousewheeldClient",
     "RigState",
     "Sample",
     "StreamFrame",

@@ -41,7 +41,7 @@ scan that sees the count, and put on a TTL line.
 | **The wire** | [`docs/reference/protocol.md`](docs/reference/protocol.md), and `daemon/src/link/` — framing, CRC-16/CCITT-FALSE, the typed messages, the clock correlation and the continuity offset that keeps a published accumulator from stepping backwards across a board reset |
 | **The zone-set store and compiler** | centimetres in, integer counts out, against a named calibration |
 | **Calibration**, with its guided measurement | `daemon/src/grpc/calibration.rs` over `daemon/src/model/calibration.rs` |
-| **The Python client and its CLI** | `client/python/` — `mousewheeld.Rig`, the API as frozen dataclasses, and `mousewheel` on a terminal. The generated stubs are private and committed; no protobuf type crosses the package boundary |
+| **The Python client and its CLI** | `client/python/` — `MousewheeldClient`, the API as frozen dataclasses, and `mousewheel` on a terminal. The generated stubs are private and committed; no protobuf type crosses the package boundary |
 | **The console panels** | `client/web/elements/` — five custom elements served by this daemon at its own version. One generated file among them: `daemon_api_client.js`, the gRPC-Web client, bundled by `make web` and committed so a release build needs no npm |
 | **Publishing to vstimd** | `daemon/src/publish/` — the `vinput` segment, written first of everything a sample causes, in centimetres, through vstimd's own crate pinned at `v0.3.0-alpha1` |
 | **Packaging** | `packaging/` — nfpm, a systemd unit, a udev rule, sysusers |
