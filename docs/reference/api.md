@@ -66,11 +66,16 @@ daemon's calibration.
 
 **A size is a full extent.** `diameter_cm`, never a radius.
 
-**Unknown fields in a request are refused**, by name — by the generated
-deserializer, before a handler sees it. A command that does part of what was
-asked is worse than one that does none. Unknown fields in a *response* are for
-the consumer to ignore — that asymmetry is `contracts/INTERACTIONS.md` §11, and
-it is what lets an old console talk to a new daemon.
+**Unknown fields in a *response* are for the consumer to ignore**, which is what
+lets an old console talk to a new daemon. In a *request* they are refused by
+name on the console's JSON path, before a handler sees one — a command that does
+part of what was asked is worse than one that does none.
+
+On the binary wire they are not, and cannot be: prost keeps unknown fields
+rather than refusing them, which is the same property that buys the tolerance in
+the other direction. So do not send this daemon a field it has never heard of
+and expect to be told; ask `ReadVersion` first. `contracts/INTERACTIONS.md` §11
+has the asymmetry and what actually enforces it.
 
 **Every rpc has its own request message**, including the eighteen that carry
 nothing. `google.protobuf.Empty` can never grow a field, so an rpc that took one

@@ -17,7 +17,9 @@
 // the generated types stop here. What crosses is protobuf's JSON mapping —
 // `fromJson` on the way out, `toJson` on the way back — which is a plain object
 // with the field names the proto spells, and which refuses an unknown field in
-// a request by name, in the browser, exactly as the daemon would
+// a request by name, in the browser, before it reaches the wire. The daemon
+// cannot do that for a *binary* caller — prost keeps unknown fields rather than
+// refusing them — so this is the strictest of the two paths, not a copy of it
 // (`contracts/INTERACTIONS.md` §11).
 //
 // Methods are named after what they ask for rather than after their rpcs, so a
