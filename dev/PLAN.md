@@ -706,10 +706,13 @@ and bulk data "belongs in its own file referenced by path" (triald `dev/PLAN.md`
 
 ## The API
 
-**gRPC** on **8082** (statemachined 8081, vstimd 8080, triald 8420), with
-gRPC-Web on the same port for the panels and server reflection for everything
-else. Units in names, as in vstimd: `position_cm`, `counts_per_cm`,
-`velocity_cm_s`.
+**gRPC** on **8083** (vstimd 8080, statemachined 8081 + 8082, triald 8420 +
+8421), with gRPC-Web on the same port for the panels and server reflection for
+everything else. Two numbers for the Python daemons because they cannot serve
+gRPC and a browser on one socket; one for this daemon because tonic-web can.
+That is why this moved off 8082 — see `contracts/DAEMON_LAYOUT.md`.
+
+Units in names, as in vstimd: `position_cm`, `counts_per_cm`, `velocity_cm_s`.
 
 The tables below name rpcs. `docs/reference/api.md` says what each is for;
 `proto/mousewheeld/v1/` is the interface itself.

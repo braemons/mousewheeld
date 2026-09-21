@@ -54,7 +54,7 @@ from .api_types import (
 )
 
 #: The port mousewheeld serves on. statemachined 8081, vstimd 8080, triald 8420.
-DEFAULT_PORT = 8082
+DEFAULT_PORT = 8083
 
 
 class MousewheeldClient:

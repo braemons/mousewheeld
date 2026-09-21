@@ -14,7 +14,7 @@ Group=mousewheeld
 # The serial port is reached through the group a udev rule puts it in, not by
 # running as root.
 SupplementaryGroups=dialout
-ExecStart=/usr/bin/mousewheeld serve --bind 0.0.0.0 --port 8082
+ExecStart=/usr/bin/mousewheeld serve --bind 0.0.0.0 --port 8083
 Restart=always
 RestartSec=2
 

@@ -13,13 +13,13 @@ thirty-two rpcs. The daemon also answers **server reflection**, so a client
 discovers all of it from a running daemon without the `.proto` to hand:
 
 ```console
-$ grpcurl -plaintext rig.local:8082 list
+$ grpcurl -plaintext rig.local:8083 list
 mousewheeld.v1.Calibration
 mousewheeld.v1.Config
 mousewheeld.v1.Device
 mousewheeld.v1.StateService
 mousewheeld.v1.Zones
-$ grpcurl -plaintext rig.local:8082 mousewheeld.v1.StateService/ReadState
+$ grpcurl -plaintext rig.local:8083 mousewheeld.v1.StateService/ReadState
 ```
 
 **Browsers speak the same port too.** `tonic-web` translates gRPC-Web in the

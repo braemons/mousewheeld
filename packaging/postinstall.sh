@@ -22,7 +22,7 @@ mousewheeld is installed and not running.
 
   Edit  /etc/braemons/mousewheeld-rig-config.toml   (the port, the lines, the calibration)
   Then  systemctl enable --now mousewheeld
-  Panels at  http://<this rig>:8082/     gRPC on the same port (grpcurl -plaintext <rig>:8082 list)
+  Panels at  http://<this rig>:8083/     gRPC on the same port (grpcurl -plaintext <rig>:8083 list)
 
 With no board attached, `mousewheeld serve --simulate` runs a wheel on a thread.
 MESSAGE

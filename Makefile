@@ -4,7 +4,7 @@
 # remembers why the panel did not change.
 
 CARGO ?= cargo
-PORT ?= 8082
+PORT ?= 8083
 VERSION ?= $(shell sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
 ARCH ?= amd64
 

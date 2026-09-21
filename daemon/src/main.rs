@@ -24,8 +24,20 @@ use mousewheeld::model::config::RigConfig;
 use mousewheeld::zones::ZoneSetStore;
 use mousewheeld::{device, grpc, publish, web};
 
-/// statemachined is 8081, vstimd 8080, triald 8420.
-const DEFAULT_PORT: u16 = 8082;
+/// vstimd is 8080, statemachined 8081, triald 8420.
+///
+/// **8083 and not 8082, which is where this used to be.** A Python daemon
+/// cannot serve gRPC and a browser on one socket -- `grpc.aio` owns its port
+/// outright and no ASGI server speaks native gRPC -- so statemachined and
+/// triald each bind *two*: the panels on their port and gRPC on one above it.
+/// statemachined's pair is 8081 and 8082, and a rig running both daemons on
+/// their defaults had a collision.
+///
+/// This daemon is the one that moved because it is the one that needs a single
+/// port: tonic-web serves the panels and the rpcs on the same socket, which is
+/// the whole reason there is no `+ 1` here. `contracts/DAEMON_LAYOUT.md` has
+/// the family's allocation and the rule that produced it.
+const DEFAULT_PORT: u16 = 8083;
 const DEFAULT_RIG_CONFIG: &str = "/etc/braemons/mousewheeld-rig-config.toml";
 const DEFAULT_STORAGE_DIR: &str = "/var/lib/mousewheeld";
 

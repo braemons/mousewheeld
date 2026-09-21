@@ -56,7 +56,7 @@ without one.
 ## Running it
 
 ```sh
-make dev          # a board simulator on a pty; panels at http://127.0.0.1:8082/
+make dev          # a board simulator on a pty; panels at http://127.0.0.1:8083/
 make check        # build, clippy, tests
 make schema       # regenerate docs/reference/zone-set.schema.json from the types
 make package      # deb and rpm

@@ -3,12 +3,12 @@
 // The `/elements/` contract, for mousewheeld. statemachined's
 // `docs/developer/daemon.md` §5 specifies it; this is mousewheeld's instance.
 //
-//     <script type="module" src="http://rig.local:8082/elements/mousewheeld.js"></script>
-//     <mousewheeld-device      base="http://rig.local:8082"></mousewheeld-device>
-//     <mousewheeld-trace       base="http://rig.local:8082"></mousewheeld-trace>
-//     <mousewheeld-zones       base="http://rig.local:8082"></mousewheeld-zones>
-//     <mousewheeld-calibration base="http://rig.local:8082"></mousewheeld-calibration>
-//     <mousewheeld-monitor     base="http://rig.local:8082"></mousewheeld-monitor>
+//     <script type="module" src="http://rig.local:8083/elements/mousewheeld.js"></script>
+//     <mousewheeld-device      base="http://rig.local:8083"></mousewheeld-device>
+//     <mousewheeld-trace       base="http://rig.local:8083"></mousewheeld-trace>
+//     <mousewheeld-zones       base="http://rig.local:8083"></mousewheeld-zones>
+//     <mousewheeld-calibration base="http://rig.local:8083"></mousewheeld-calibration>
+//     <mousewheeld-monitor     base="http://rig.local:8083"></mousewheeld-monitor>
 //
 // **This URL and these five tag names are what the console repo depends on.**
 // The console is a static shell with no domain logic: every panel it shows is

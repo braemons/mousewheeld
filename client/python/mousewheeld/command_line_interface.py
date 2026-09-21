@@ -50,7 +50,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--rig",
         default="localhost",
-        help="host, or host:port (default port 8082)",
+        help="host, or host:port (default port 8083)",
     )
     commands = parser.add_subparsers(dest="command", required=True)
 
