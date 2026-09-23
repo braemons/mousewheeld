@@ -125,6 +125,26 @@ struct AxisRuntime {
     distance: i64,
     host_velocity_cm_s: f64,
     device_velocity_cm_s: f64,
+    /// Added after the sign, so that turning `invert` over while the daemon
+    /// runs reverses the direction from then on without moving anything: see
+    /// [`Device::set_invert`].
+    bias: i64,
+}
+
+impl AxisRuntime {
+    /// Counts in the board's frame — offset for continuity, not inverted — in
+    /// the host's.
+    fn host(&self, board: i64) -> i64 {
+        self.sign() * board + self.bias
+    }
+
+    fn sign(&self) -> i64 {
+        if self.invert {
+            -1
+        } else {
+            1
+        }
+    }
 }
 
 struct ArmedSet {
@@ -228,6 +248,7 @@ impl Device {
                         distance: 0,
                         host_velocity_cm_s: 0.0,
                         device_velocity_cm_s: 0.0,
+                        bias: 0,
                     })
                     .collect(),
                 connected: false,
@@ -452,9 +473,7 @@ impl Device {
                     // were compiled in.
                     let displacement = hit.c.first().map(|raw| {
                         let axis = &inner.axes[0];
-                        let published = raw + inner.continuity.offset(0);
-                        let published = if axis.invert { -published } else { published };
-                        published - axis.origin
+                        axis.host(raw + inner.continuity.offset(0)) - axis.origin
                     });
                     if let Some(armed) = inner.armed.as_mut() {
                         if let Some(slot) = armed.fired_at.get_mut(zone) {
@@ -482,7 +501,7 @@ impl Device {
                     for (index, origin) in armed.origin.iter().enumerate() {
                         let origin = origin + inner.continuity.offset(index);
                         if let Some(axis) = inner.axes.get_mut(index) {
-                            axis.origin = if axis.invert { -origin } else { origin };
+                            axis.origin = axis.host(origin);
                         }
                     }
                     match inner.armed.as_mut() {
@@ -535,7 +554,7 @@ impl Device {
                     // In the host's frame: offset and sign, as the samples are.
                     let origin = origin + inner.continuity.offset(index);
                     if let Some(axis) = inner.axes.get_mut(index) {
-                        let origin = &if axis.invert { -origin } else { origin };
+                        let origin = &axis.host(origin);
                         if axis.origin != *origin {
                             log::debug!(
                                 "{}: adopting the board's origin {origin} (mirror had {})",
@@ -622,11 +641,11 @@ impl Device {
             for (index, counts) in published.iter().enumerate() {
                 let Some(axis) = inner.axes.get_mut(index) else { continue };
                 // Inversion is applied once, here, so nothing above carries a sign.
-                let counts = if axis.invert { -counts } else { *counts };
+                let counts = axis.host(*counts);
                 axis.distance += (counts - axis.counts).abs();
                 axis.counts = counts;
                 if let Some(velocity) = sample.v.get(index) {
-                    let velocity = if axis.invert { -velocity } else { *velocity };
+                    let velocity = axis.sign() * velocity;
                     axis.device_velocity_cm_s = velocity as f64 / axis.counts_per_cm;
                 }
             }
@@ -871,6 +890,8 @@ impl Device {
         let arm_id = u32::from(rand::random::<u16>()) + 1000;
         let version = set.version;
         let zone_count = set.zones.len();
+        let inverted: Vec<bool> =
+            self.inner.lock().unwrap().axes.iter().map(|axis| axis.invert).collect();
 
         // Chunked, and the board's live set is untouched until `zones_end`.
         self.send(commands::zones_begin(
@@ -880,7 +901,7 @@ impl Device {
             &set.name,
         ));
         for (index, zone) in set.zones.iter().enumerate() {
-            self.send(commands::zone(self.next_message_id(), wire_zone(index, zone)));
+            self.send(commands::zone(self.next_message_id(), wire_zone(index, zone, &inverted)));
         }
         self.send(commands::zones_end(self.next_message_id()));
 
@@ -1058,6 +1079,43 @@ impl Device {
             .map(|publisher| (publisher.name().to_string(), publisher.write_count()))
     }
 
+    /// Turn an axis' direction over while the daemon runs.
+    ///
+    /// **Nothing moves at the flip; the direction reverses from then on.** The
+    /// published accumulator is what vstimd follows, and it differences
+    /// successive totals: negating it would move a corridor by twice the
+    /// distance walked. So the bias is chosen to keep the accumulator where it
+    /// is, and the origin is mirrored about it — the position was reached
+    /// going the way that is now called backwards, so its sign changes.
+    ///
+    /// Refused while a set is armed: its zones went to the board in the
+    /// direction they were compiled for.
+    pub fn set_invert(&self, axis_name: &str, invert: bool) -> Result<(), String> {
+        let mut inner = self.inner.lock().unwrap();
+        let Some(index) = inner.axes.iter().position(|axis| axis.name == axis_name) else {
+            return Ok(());
+        };
+        if inner.axes[index].invert == invert {
+            return Ok(());
+        }
+        if inner.armed.is_some() || inner.foreign_arm_id.is_some() {
+            return Err(format!("disarm before changing the direction of {axis_name}"));
+        }
+        let axis = &mut inner.axes[index];
+        let at = axis.counts;
+        axis.invert = invert;
+        axis.bias = 2 * at - axis.bias;
+        axis.origin = 2 * at - axis.origin;
+        axis.host_velocity_cm_s = -axis.host_velocity_cm_s;
+        axis.device_velocity_cm_s = -axis.device_velocity_cm_s;
+        if index == 0 {
+            for (_, counts) in inner.history.iter_mut() {
+                *counts = 2 * at - *counts;
+            }
+        }
+        Ok(())
+    }
+
     pub fn recalibrate(&self, axis_name: &str, counts_per_cm: f64) {
         let mut inner = self.inner.lock().unwrap();
         if let Some(axis) = inner.axes.iter_mut().find(|axis| axis.name == axis_name) {
@@ -1082,17 +1140,26 @@ fn speaks_protocol(board: u32) -> bool {
 }
 
 /// A compiled zone, as the wire carries it: indices and counts, nothing else.
-fn wire_zone(index: usize, zone: &CompiledZone) -> WireZone {
+///
+/// The set is compiled in the host's frame and the board counts in its own,
+/// uninverted, so a displacement interval on an inverted axis is mirrored on
+/// the way out: the board's intervals are closed, and `lo ≤ -x ≤ hi` is exactly
+/// `-hi ≤ x ≤ -lo`. Distance has no sign and is not touched.
+fn wire_zone(index: usize, zone: &CompiledZone, inverted: &[bool]) -> WireZone {
+    let wrap = zone.wrap_counts.unwrap_or(0);
     WireZone {
         index: index as u32,
         intervals: zone
             .axis_indices
             .iter()
             .enumerate()
-            .map(|(i, axis)| Interval {
-                axis: *axis as u32,
-                lo: zone.min_counts.get(i).copied().flatten(),
-                hi: zone.max_counts.get(i).copied().flatten(),
+            .map(|(i, axis)| {
+                let lo = zone.min_counts.get(i).copied().flatten();
+                let hi = zone.max_counts.get(i).copied().flatten();
+                let mirrored = zone.metric == ZoneMetric::Displacement
+                    && inverted.get(*axis).copied().unwrap_or(false);
+                let (lo, hi) = if mirrored { mirror(lo, hi, wrap) } else { (lo, hi) };
+                Interval { axis: *axis as u32, lo, hi }
             })
             .collect(),
         metric: match zone.metric {
@@ -1110,6 +1177,27 @@ fn wire_zone(index: usize, zone: &CompiledZone) -> WireZone {
         action: Action::Pulse as i32,
         pulse_ms: ZONE_PULSE_MS,
     }
+}
+
+/// `[lo, hi]` → `[-hi, -lo]`, and on a wrapped track brought back into the
+/// lap, which is where the board compares a wrapped displacement.
+///
+/// The board has no interval that crosses the end of a lap, so the one case
+/// without an exact image is a lap interval starting at 0: `[0, hi]` mirrors to
+/// `[w - hi, w]`, whose `w` is the lap's 0 again. It goes out as `[w - hi, w]`,
+/// which the board's `value ≤ hi` reads as "to the end of the lap" — every
+/// count but the lap's first, one count short of exact.
+fn mirror(lo: Option<i64>, hi: Option<i64>, wrap: i64) -> (Option<i64>, Option<i64>) {
+    let (lo, hi) = (hi.map(|hi| -hi), lo.map(|lo| -lo));
+    if wrap <= 0 {
+        return (lo, hi);
+    }
+    let lo = lo.map(|lo| lo.rem_euclid(wrap));
+    let hi = hi.map(|hi| match hi.rem_euclid(wrap) {
+        0 => wrap,
+        hi => hi,
+    });
+    (lo, hi)
 }
 
 /// Bytes the link could not read, for the monitor: a refused frame is shown as
@@ -1151,6 +1239,70 @@ mod tests {
             speaks_protocol(PROTOCOL_VERSION + 5),
             "newer firmware is fine: the protocol grows additively and a reader \
              ignores what it does not know"
+        );
+    }
+
+    fn sample(seq: u64, c: i64) -> WireSample {
+        WireSample { seq, t_us: seq * 2000, c: vec![c], v: vec![] }
+    }
+
+    #[test]
+    fn turning_invert_over_reverses_the_direction_and_moves_nothing() {
+        let device = Device::new(
+            Backend::Absent,
+            vec![AxisSetup { name: "wheel".into(), counts_per_cm: 10.0, invert: false }],
+            vec![],
+            500,
+            None,
+        );
+        device.absorb_sample(&sample(1, 0));
+        device.absorb_sample(&sample(2, 300));
+        assert_eq!(device.counts_of("wheel"), Some(300));
+
+        device.set_invert("wheel", true).unwrap();
+        assert_eq!(device.counts_of("wheel"), Some(300), "the accumulator does not jump");
+        device.absorb_sample(&sample(3, 320));
+        assert_eq!(device.counts_of("wheel"), Some(280), "the board counting up is now backwards");
+
+        device.set_invert("wheel", false).unwrap();
+        device.absorb_sample(&sample(4, 330));
+        assert_eq!(device.counts_of("wheel"), Some(290));
+    }
+
+    #[test]
+    fn a_displacement_zone_on_an_inverted_axis_goes_to_the_board_mirrored() {
+        let zone = CompiledZone {
+            name: "goal".into(),
+            axis_indices: vec![0],
+            metric: ZoneMetric::Displacement,
+            min_counts: vec![Some(400)],
+            max_counts: vec![None],
+            wrap_counts: None,
+            fire: FireRule::Once,
+            hysteresis_counts: 0,
+            level: false,
+            line_index: 0,
+        };
+        let interval = |zone: &CompiledZone, inverted| wire_zone(0, zone, &[inverted]).intervals[0].clone();
+        assert_eq!((interval(&zone, false).lo, interval(&zone, false).hi), (Some(400), None));
+        assert_eq!((interval(&zone, true).lo, interval(&zone, true).hi), (None, Some(-400)));
+
+        let distance = CompiledZone { metric: ZoneMetric::Distance, ..zone.clone() };
+        assert_eq!(interval(&distance, true).lo, Some(400), "distance has no sign");
+
+        // On a 1000-count lap: [100, 300] is [700, 900] the other way round,
+        // and [0, 300] is [700, the end of the lap].
+        let lap = CompiledZone {
+            min_counts: vec![Some(100)],
+            max_counts: vec![Some(300)],
+            wrap_counts: Some(1000),
+            ..zone.clone()
+        };
+        assert_eq!((interval(&lap, true).lo, interval(&lap, true).hi), (Some(700), Some(900)));
+        let from_start = CompiledZone { min_counts: vec![Some(0)], ..lap };
+        assert_eq!(
+            (interval(&from_start, true).lo, interval(&from_start, true).hi),
+            (Some(700), Some(1000))
         );
     }
 }

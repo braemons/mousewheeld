@@ -64,6 +64,11 @@ fn replace_calibration_body(daemon: &Arc<Daemon>, patch: wire::CalibrationPatch)
                 axis.diameter_cm = Some(value);
             }
             if let Some(value) = change.invert {
+                // Onto the running axis first: it is the one that can refuse.
+                daemon
+                    .device
+                    .set_invert(&change.name, value)
+                    .map_err(|problem| ApiError::refused("armed", problem).about(change.name.clone()))?;
                 axis.invert = value;
             }
         }
