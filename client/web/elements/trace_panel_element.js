@@ -170,7 +170,7 @@ export class TracePanelElement extends BasePanelElement {
       gapAfter: false,
     });
     if (this.points.length > MOST_POINTS) this.points.splice(0, this.points.length - MOST_POINTS);
-    this.paint();
+    this.paintSoon();
   }
 
   paintWindowButtons() {

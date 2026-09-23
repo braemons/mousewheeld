@@ -149,7 +149,7 @@ export class SerialMonitorPanelElement extends BasePanelElement {
       : [this.conversation, MOST_CONVERSATION_LINES];
     held.push(line);
     if (held.length > limit) held.splice(0, held.length - limit);
-    if (repaint) this.paint();
+    if (repaint) this.paintSoon();
   }
 
   visibleLines() {

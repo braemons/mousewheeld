@@ -84,6 +84,21 @@ export class BasePanelElement extends HTMLElement {
     this.stopped();
   }
 
+  /// `paint()` once before the next frame, however many times this is called
+  /// until then.
+  ///
+  /// For a panel painting off a stream: the wire carries every sample, 500 a
+  /// second, and a panel that rebuilt itself on each one would spend the
+  /// browser's whole main thread on frames nobody sees.
+  paintSoon() {
+    if (this.paintPending) return;
+    this.paintPending = true;
+    requestAnimationFrame(() => {
+      this.paintPending = false;
+      this.paint();
+    });
+  }
+
   /// Call `read` now and every `seconds`, and never let two overlap.
   ///
   /// The overlap guard matters: `Device.ReadDevice` reaches the device session,
