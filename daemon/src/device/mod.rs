@@ -161,6 +161,14 @@ struct Inner {
     clock: ClockCorrelation,
     continuity: Continuity,
     armed: Option<ArmedSet>,
+    /// The board's running count of late scans, as last reported. The board
+    /// sends the total; what is news is the difference.
+    scan_overruns: u64,
+    /// Between a `hello_ack` and the `state_report` that finishes the connect.
+    taking_over: bool,
+    /// An arm the board had when this daemon connected and did not make: a
+    /// flashed set, or an earlier daemon's. Kept so that it can be disarmed.
+    foreign_arm_id: Option<u32>,
 }
 
 /// One output line, as the wire carries it: an index, a pin and a safe level.
@@ -242,6 +250,9 @@ impl Device {
                 clock: ClockCorrelation::new(),
                 continuity: Continuity::new(count),
                 armed: None,
+                scan_overruns: 0,
+                taking_over: false,
+                foreign_arm_id: None,
             }),
             armed_ack: Condvar::new(),
             writer: Mutex::new(None),
@@ -382,7 +393,8 @@ impl Device {
                     // this board: no stream, no line map, no zones. A daemon
                     // that carried on here would be guessing.
                     self.note_error(&format!(
-                        "the board speaks protocol {} and this daemon needs at least {} —                          reflash the board, or run the daemon that matches it",
+                        "the board speaks protocol {} and this daemon needs at least {} — \
+                         reflash the board, or run the daemon that matches it",
                         ack.protocol_version, OLDEST_PROTOCOL_SPOKEN
                     ));
                     let mut inner = self.inner.lock().unwrap();
@@ -417,23 +429,12 @@ impl Device {
                     inner.flashed = ack
                         .flashed
                         .map(|set| FlashedZoneSet { name: set.name, version: set.version });
+                    inner.taking_over = true;
                 }
-                // Everything the board needs to be useful, in the order it
-                // needs it: how many axes to count, then the wiring, because a
-                // zone names an axis and a line by index and a board without
-                // them refuses the zone; then the stream. Zones follow only when
-                // somebody arms.
-                let axes = {
-                    let inner = self.inner.lock().unwrap();
-                    inner.axes.len().min(usize::from(inner.capacities.n_axes)).max(1)
-                };
-                self.send(commands::axes(self.next_message_id(), axes));
-                self.send(commands::lines(self.next_message_id(), &self.lines));
-                self.send(commands::stream(
-                    self.next_message_id(),
-                    self.stream_rate_hz,
-                    true,
-                ));
+                // Before configuring, ask what the board is doing: one left armed
+                // by a daemon that has since gone refuses the configuration as
+                // busy. The `state_report` that answers finishes the connect.
+                self.send(commands::state(self.next_message_id()));
             }
             FromDevice::Sample(sample) => self.absorb_sample(&sample),
             FromDevice::ZoneHit(hit) => {
@@ -507,6 +508,9 @@ impl Device {
                 self.armed_ack.notify_all();
             }
             FromDevice::StateReport(report) => {
+                if std::mem::take(&mut self.inner.lock().unwrap().taking_over) {
+                    self.take_over(report.armed.as_ref().map(|armed| armed.arm_id));
+                }
                 let mut inner = self.inner.lock().unwrap();
                 inner.ring_drops = report.ring_drops;
                 // The board's origin is the one the zones are evaluated
@@ -542,11 +546,22 @@ impl Device {
                         }
                     }
                 }
-                if report.scan_overruns > 0 {
+                // A total that went down is a board that reset and counts afresh.
+                let before = if report.scan_overruns < inner.scan_overruns {
+                    0
+                } else {
+                    inner.scan_overruns
+                };
+                inner.scan_overruns = report.scan_overruns;
+                if report.scan_overruns > before {
                     drop(inner);
                     // A scan was late. The device's timing is what this whole
                     // system is for, so this is a finding and not a statistic.
-                    self.note_error(&format!("the board missed {} scans", report.scan_overruns));
+                    self.note_error(&format!(
+                        "the board missed {} scans ({} since it started)",
+                        report.scan_overruns - before,
+                        report.scan_overruns
+                    ));
                 }
             }
             FromDevice::Error(error) => {
@@ -909,11 +924,57 @@ impl Device {
     pub fn disarm(&self) {
         let arm_id = {
             let mut inner = self.inner.lock().unwrap();
-            let arm_id = inner.armed.as_ref().map(|armed| armed.arm_id).unwrap_or(0);
-            inner.armed = None;
+            let arm_id = inner
+                .armed
+                .take()
+                .map(|armed| armed.arm_id)
+                .or(inner.foreign_arm_id)
+                .unwrap_or(0);
+            inner.foreign_arm_id = None;
             arm_id
         };
         self.send(commands::disarm(self.next_message_id(), arm_id));
+    }
+
+    /// Finish a connect, once the board has said whether it is armed.
+    ///
+    /// An unarmed board gets everything it needs to be useful, in the order it
+    /// needs it: how many axes to count, then the wiring, because a zone names
+    /// an axis and a line by index and a board without them refuses the zone;
+    /// then the stream. Zones follow only when somebody arms.
+    ///
+    /// An armed board keeps its axes and its lines, because it refuses both
+    /// while armed and because its zones were compiled against them. The arm is
+    /// left alone: it is this daemon's across a reopened link, or it is the
+    /// flashed set the board came up with, and a board that runs its set with
+    /// no host attached is what flashing is for.
+    fn take_over(&self, board_arm: Option<u32>) {
+        match board_arm {
+            None => {
+                let axes = {
+                    let inner = self.inner.lock().unwrap();
+                    inner.axes.len().min(usize::from(inner.capacities.n_axes)).max(1)
+                };
+                self.send(commands::axes(self.next_message_id(), axes));
+                self.send(commands::lines(self.next_message_id(), &self.lines));
+            }
+            Some(arm_id) => {
+                let mut inner = self.inner.lock().unwrap();
+                if inner.armed.as_ref().map(|armed| armed.arm_id) != Some(arm_id) {
+                    inner.foreign_arm_id = Some(arm_id);
+                    let flashed = inner
+                        .flashed
+                        .as_ref()
+                        .map(|set| format!(", flashed zone set {} v{}", set.name, set.version))
+                        .unwrap_or_default();
+                    log::warn!(
+                        "the board is armed as {arm_id}, not by this daemon{flashed}: its axes, \
+                         lines and zones stay as they are until it is disarmed"
+                    );
+                }
+            }
+        }
+        self.send(commands::stream(self.next_message_id(), self.stream_rate_hz, true));
     }
 
     /// Ask the board to keep the armed set across a power cycle.
