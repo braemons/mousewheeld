@@ -16,7 +16,7 @@
 # when somebody adds a second board. Empty means "no board on this host", which
 # is a normal state for a development box and not an error.
 port = "/dev/mousewheel"
-baud = 1000000
+baud = 921600
 
 # ── Rates ────────────────────────────────────────────────────────────────────
 [stream]

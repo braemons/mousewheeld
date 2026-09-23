@@ -98,7 +98,7 @@ pub struct DeviceConfig {
 
 impl DeviceConfig {
     fn default_baud() -> u32 {
-        1_000_000
+        921_600
     }
 }
 

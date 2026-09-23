@@ -20,7 +20,7 @@
 #include "hal.h"
 
 #ifndef MOUSEWHEELD_BAUD
-#define MOUSEWHEELD_BAUD 1000000
+#define MOUSEWHEELD_BAUD 921600
 #endif
 
 namespace mousewheeld::hal {
