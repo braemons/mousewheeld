@@ -1,0 +1,296 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// The link between the daemon and the board: protobuf, carried in COBS frames
+// with a CRC-16. `docs/reference/protocol.md` is the prose; this file is the
+// shape, and both ends are generated from it — prost in the daemon, nanopb on
+// the board.
+//
+// This is not the API. `proto/mousewheeld/v1/` is what clients see, in
+// centimetres; this is what a microcontroller sees, in counts. The package is
+// separate so the two can never share a message by accident.
+//
+// Rules the shapes follow, from the protocol document:
+//
+// - **The device knows counts and nothing else.** No float or double appears
+//   below, and no name the board would have to store, except the one a zone set
+//   carries so a flashed set can be reported.
+// - **Every size is bounded.** Each repeated and string field has a nanopb
+//   limit in `firmware/core/proto/link.options`, and the board reports the
+//   limits that matter in `HelloAck`.
+// - **Unknown fields are ignored and an unknown message is refused by name.**
+//   A new field is how the protocol grows without a version bump; a `body` the
+//   board cannot name is answered with `Error{code: "unknown_type"}`.
+syntax = "proto3";
+
+package mousewheeld.link.v1;
+
+// ---------------------------------------------------------------- envelopes ---
+
+// Everything the daemon sends is one of these.
+message HostMessage {
+    // The sender's per-direction counter, wrapping at 16 bits. For link-level
+    // retry and nothing else — it is not `seq`.
+    uint32 message_id = 1;
+    oneof body {
+        Hello hello = 10;
+        Axes axes = 11;
+        Lines lines = 12;
+        Stream stream = 13;
+        ZonesBegin zones_begin = 14;
+        Zone zone = 15;
+        ZonesEnd zones_end = 16;
+        Arm arm = 17;
+        Disarm disarm = 18;
+        Zero zero = 19;
+        Analog analog = 20;
+        Save save = 21;
+        Ping ping = 22;
+        StateRequest state = 23;
+        Debug debug = 24;
+    }
+}
+
+// Everything the board sends is one of these.
+message DeviceMessage {
+    uint32 message_id = 1;
+    oneof body {
+        HelloAck hello_ack = 10;
+        Sample sample = 11;
+        ZoneHit zone_hit = 12;
+        Armed armed = 13;
+        StateReport state_report = 14;
+        Ok ok = 15;
+        Error error = 16;
+        Log log = 17;
+        Pong pong = 18;
+    }
+}
+
+// ------------------------------------------------------------ host → device ---
+
+message Hello {
+    uint32 protocol_version = 1;
+}
+
+enum AxisSource {
+    AXIS_SOURCE_QUADRATURE = 0;
+    // Declared so the model is N-axis from day one; refused by name as
+    // `unsupported_source` until a board can read one.
+    AXIS_SOURCE_OPTICAL_SPI = 1;
+}
+
+message AxisConfig {
+    AxisSource source = 1;
+    bool invert = 2;
+}
+
+message Axes {
+    repeated AxisConfig axes = 1;
+}
+
+message Line {
+    uint32 index = 1;
+    uint32 pin = 2;
+    // The idle level. A line is *active* at the other one.
+    bool safe_high = 3;
+}
+
+message Lines {
+    repeated Line lines = 1;
+}
+
+message Stream {
+    // Samples per second; 0 stops the stream. At most the board's `scan_hz`.
+    uint32 rate_hz = 1;
+    // Carry the device's own velocity on each sample.
+    bool velocity = 2;
+}
+
+message ZonesBegin {
+    uint32 zone_set_version = 1;
+    // How many `Zone`s follow. `ZonesEnd` is refused unless every index in
+    // `0..n` arrived.
+    uint32 n = 2;
+    // The one string the board stores: `HelloAck.flashed` reports a flashed
+    // set by it.
+    string name = 3;
+}
+
+enum Metric {
+    METRIC_DISPLACEMENT = 0;   // counts − origin, signed
+    METRIC_DISTANCE = 1;       // Σ|Δcounts| since the origin was set
+}
+
+enum Fire {
+    FIRE_ONCE = 0;             // fires on the first entry, then never until re-armed
+    FIRE_REARM = 1;            // fires again after leaving by `hysteresis`
+}
+
+enum Action {
+    ACTION_PULSE = 0;          // active for `pulse_ms`
+    ACTION_LEVEL = 1;          // active while engaged
+}
+
+// One axis of a rect: an interval in counts. An absent bound is open.
+message Interval {
+    uint32 axis = 1;
+    optional sint64 lo = 2;
+    optional sint64 hi = 3;
+}
+
+// One compiled zone: integer counts, no names, no units.
+message Zone {
+    uint32 index = 1;
+    repeated Interval intervals = 2;
+    Metric metric = 3;
+    // Period in counts; 0 for a straight track.
+    sint64 wrap = 4;
+    Fire fire = 5;
+    sint64 hysteresis = 6;
+    // Fire on arming if already inside.
+    bool level_on_arm = 7;
+    uint32 line = 8;
+    Action action = 9;
+    uint32 pulse_ms = 10;
+}
+
+message ZonesEnd {}
+
+enum Origin {
+    // Displacement and distance are zero at the arm point — what a trial wants.
+    ORIGIN_CURRENT = 0;
+    // Keep the device origin.
+    ORIGIN_ABSOLUTE = 1;
+}
+
+message Arm {
+    uint32 arm_id = 1;
+    // Must be the committed set's. A mismatch is refused, so a board that lost
+    // an upload never arms the set before it.
+    uint32 zone_set_version = 2;
+    Origin origin = 3;
+}
+
+message Disarm {
+    uint32 arm_id = 1;
+}
+
+message Zero {
+    // Axis indices; empty for all.
+    repeated uint32 axes = 1;
+}
+
+enum AnalogMode {
+    ANALOG_MODE_OFF = 0;
+    ANALOG_MODE_WRAP = 1;      // displacement modulo `range_counts`, a sawtooth
+    ANALOG_MODE_CLAMP = 2;     // displacement clamped to [lo, hi]
+    ANALOG_MODE_VELOCITY = 3;  // device velocity, counts/s, clamped to [lo, hi]
+}
+
+message Analog {
+    uint32 axis = 1;
+    AnalogMode mode = 2;
+    sint64 range_counts = 3;
+    sint64 lo = 4;
+    sint64 hi = 5;
+}
+
+message Save {}
+message Ping {}
+message StateRequest {}
+
+// Human-readable text on the serial port, for a terminal. Left by `Hello`.
+message Debug {
+    bool on = 1;
+}
+
+// ------------------------------------------------------------ device → host ---
+
+message FlashedSet {
+    string name = 1;
+    uint32 version = 2;
+}
+
+// Sent in reply to `Hello`, and unasked at boot — which is how the daemon
+// learns the board reset.
+message HelloAck {
+    string board = 1;
+    string firmware = 2;
+    uint32 protocol_version = 3;
+    uint32 n_axes = 4;
+    uint32 max_zones = 5;
+    uint32 max_lines = 6;
+    // The longest frame the board accepts, in encoded bytes including the
+    // delimiter.
+    uint32 max_frame = 7;
+    uint32 scan_hz = 8;
+    optional FlashedSet flashed = 9;
+}
+
+// The only high-rate message. Counts are cumulative, never deltas.
+message Sample {
+    // Contiguous by construction: a jump is loss.
+    uint64 seq = 1;
+    // The device clock, free-running from boot.
+    uint64 t_us = 2;
+    repeated sint64 c = 3;
+    // Counts per second over the board's window. Empty unless asked for.
+    repeated sint64 v = 4;
+}
+
+message ZoneHit {
+    // Its own sequence, separate from `Sample.seq`.
+    uint64 seq = 1;
+    uint32 arm_id = 2;
+    // The zone's index in the armed set.
+    uint32 zone = 3;
+    uint64 t_us = 4;
+    repeated sint64 c = 5;
+}
+
+message Armed {
+    uint32 arm_id = 1;
+    uint32 zone_set_version = 2;
+}
+
+message StateReport {
+    repeated sint64 c = 1;
+    repeated sint64 origin = 2;
+    repeated sint64 distance = 3;
+    repeated sint64 v = 4;
+    uint32 n_axes = 5;
+    uint32 stream_rate_hz = 6;
+    // Present while a set is armed.
+    optional Armed armed = 7;
+    // Bit i set: zone i can still fire.
+    uint32 zones_live = 8;
+    Analog analog = 9;
+    // Samples the ring had no room for. Visible as gaps in `Sample.seq`.
+    uint64 ring_drops = 10;
+    uint64 zone_hit_drops = 11;
+    // Scans that started later than one and a half periods after the last.
+    uint64 scan_overruns = 12;
+    uint32 scan_max_us = 13;
+    // Frames the board refused before reading them: CRC, COBS or length.
+    uint64 frames_refused = 14;
+}
+
+// `answers` names the command acknowledged. It is never `message_id`: every
+// frame carries its own.
+message Ok {
+    uint32 answers = 1;
+}
+
+message Error {
+    string code = 1;
+    string detail = 2;
+    optional uint32 answers = 3;
+}
+
+message Log {
+    string text = 1;
+}
+
+message Pong {
+    uint32 answers = 1;
+}

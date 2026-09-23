@@ -1,0 +1,31 @@
+# nanopb limits for proto/mousewheeld/link/v1/link.proto.
+#
+# Every repeated and string field is bounded here so the generated structs are
+# fixed-size and nothing is decoded through a callback. The counts must agree
+# with core/config.h; static_asserts in core/protocol/session.cpp refuse a
+# build where they do not.
+
+# kMaxAxes
+mousewheeld.link.v1.Axes.axes                 max_count:2
+mousewheeld.link.v1.Zone.intervals            max_count:2
+mousewheeld.link.v1.Zero.axes                 max_count:2
+mousewheeld.link.v1.Sample.c                  max_count:2
+mousewheeld.link.v1.Sample.v                  max_count:2
+mousewheeld.link.v1.ZoneHit.c                 max_count:2
+mousewheeld.link.v1.StateReport.c             max_count:2
+mousewheeld.link.v1.StateReport.origin        max_count:2
+mousewheeld.link.v1.StateReport.distance      max_count:2
+mousewheeld.link.v1.StateReport.v             max_count:2
+
+# kMaxLines
+mousewheeld.link.v1.Lines.lines               max_count:8
+
+# kMaxNameLength (+1 for the terminator nanopb stores)
+mousewheeld.link.v1.ZonesBegin.name           max_size:33
+mousewheeld.link.v1.FlashedSet.name           max_size:33
+
+mousewheeld.link.v1.HelloAck.board            max_size:24
+mousewheeld.link.v1.HelloAck.firmware         max_size:32
+mousewheeld.link.v1.Error.code                max_size:24
+mousewheeld.link.v1.Error.detail              max_size:96
+mousewheeld.link.v1.Log.text                  max_size:120

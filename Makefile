@@ -8,7 +8,7 @@ PORT ?= 8083
 VERSION ?= $(shell sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
 ARCH ?= amd64
 
-.PHONY: build test check proto check-proto web check-web client check-schema check-text run dev schema package clean help
+.PHONY: build test check proto check-proto web check-web client check-schema check-text run dev schema package clean help firmware-proto test-firmware firmware
 
 help:
 	@sed -n 's/^\([a-z-]*\):.*## \(.*\)/  \1|\2/p' $(MAKEFILE_LIST) | column -t -s '|'
@@ -143,3 +143,19 @@ package: build ## deb and rpm, from packaging/nfpm.yaml
 clean:
 	$(CARGO) clean
 	rm -rf dist
+
+# The link proto is generated for the board with nanopb and committed, like
+# daemon/src/wire/: a firmware build needs no generator, and a change to the
+# link shows up as a diff. The generator version must match the runtime in
+# firmware/third_party/nanopb (0.4.9.1).
+firmware-proto: ## Regenerate firmware/core/proto/ from proto/mousewheeld/link/v1/
+	uvx --from nanopb==0.4.9.1 nanopb_generator -I proto -D firmware/core/proto \
+	  -f firmware/core/proto/link.options proto/mousewheeld/link/v1/link.proto
+
+test-firmware: ## The firmware core's unit tests, on the host, under ASan and UBSan
+	cmake -S firmware -B firmware/build -DMOUSEWHEELD_SANITIZE=ON
+	cmake --build firmware/build -j
+	ctest --test-dir firmware/build --output-on-failure
+
+firmware: ## The ESP32 image (firmware/.pio/build/esp32/firmware.bin)
+	cd firmware && uvx --with pip platformio run -e esp32
