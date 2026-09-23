@@ -47,6 +47,7 @@ from .api_types import (
     ZoneBoundReference,
     RigState,
     Sample,
+    SetPositionRequest,
     StreamFrame,
     ValidationReport,
     VersionReport,
@@ -204,6 +205,14 @@ def rig_state_from_wire(message: state_pb2.RigState) -> RigState:
             stale=message.health.stale,
         ),
         connected=message.link.connected,
+    )
+
+
+def set_position_request_to_wire(request: SetPositionRequest) -> state_pb2.SetPositionRequest:
+    """Convert Python type to wire protobuf for SetPosition."""
+    return state_pb2.SetPositionRequest(
+        axes=list(request.axes),
+        position_cm=list(request.position_cm)
     )
 
 

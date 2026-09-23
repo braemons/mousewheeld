@@ -464,3 +464,15 @@ class ZoneSetFile:
 
     name: str
     text: str
+
+
+@dataclass(frozen=True)
+class SetPositionRequest:
+    """A request to set position for vstimd sync.
+    
+    Unlike zero_position which sets the origin to the current position,
+    set_position allows specifying any position in centimetres.
+    """
+    
+    axes: tuple[str, ...] = ()
+    position_cm: tuple[float, ...] = ()

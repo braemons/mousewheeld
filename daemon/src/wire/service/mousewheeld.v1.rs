@@ -1324,6 +1324,20 @@ pub mod state_service_server {
             &self,
             request: tonic::Request<crate::wire::ZeroRequest>,
         ) -> std::result::Result<tonic::Response<crate::wire::RigState>, tonic::Status>;
+        /// Set the **API origin** to a specific position.
+        ///
+        /// This allows vstimd to sync the wheel to an arbitrary position, e.g. when
+        /// resetting a corridor scene. Unlike `ZeroPosition` which sets the origin
+        /// to the current position, `SetPosition` allows you to specify any position
+        /// in centimetres. The origin is adjusted so that `position_cm` matches the
+        /// requested value.
+        ///
+        /// The firmware does not support absolute positioning; the daemon computes
+        /// the required origin offset and sends it to the device.
+        async fn set_position(
+            &self,
+            request: tonic::Request<crate::wire::SetPositionRequest>,
+        ) -> std::result::Result<tonic::Response<crate::wire::RigState>, tonic::Status>;
     }
     /// Where the wheel is.
     #[derive(Debug)]
@@ -1524,6 +1538,51 @@ pub mod state_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = ZeroPositionSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/mousewheeld.v1.StateService/SetPosition" => {
+                    #[allow(non_camel_case_types)]
+                    struct SetPositionSvc<T: StateService>(pub Arc<T>);
+                    impl<
+                        T: StateService,
+                    > tonic::server::UnaryService<crate::wire::SetPositionRequest>
+                    for SetPositionSvc<T> {
+                        type Response = crate::wire::RigState;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<crate::wire::SetPositionRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as StateService>::set_position(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = SetPositionSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

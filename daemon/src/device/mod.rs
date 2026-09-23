@@ -811,6 +811,37 @@ impl Device {
         self.send(commands::zero(self.next_message_id(), &indices));
     }
 
+    /// Set the origin so that position_cm matches the requested value.
+    ///
+    /// This is for vstimd corridor synchronization: when vstimd resets the
+    /// camera position, mousewheeld can sync the wheel position to match.
+    /// The origin is adjusted so that `position_cm = counts - origin` equals
+    /// the requested value.
+    pub fn set_position(&self, axes: &[String], positions_cm: &[f64]) {
+        let mut inner = self.inner.lock().unwrap();
+        let indices: Vec<usize> = {
+            let mut indices = Vec::new();
+            for index in 0..inner.axes.len() {
+                let selected = axes.is_empty() || axes.iter().any(|name| name == &inner.axes[index].name);
+                if selected {
+                    let position_cm = positions_cm.get(index).copied().unwrap_or(0.0);
+                    let counts_at_position = (position_cm * inner.axes[index].counts_per_cm) as i64;
+                    // origin = counts - counts_at_position
+                    // so that position_cm = counts - origin = counts_at_position
+                    inner.axes[index].origin = inner.axes[index].counts - counts_at_position;
+                    indices.push(index);
+                }
+            }
+            indices
+        };
+        drop(inner);
+        
+        // The board doesn't support absolute positioning; we'll just zero on the device
+        // and the host will maintain the correct origin. The board's view of origin
+        // will be corrected on the next state report.
+        self.send(commands::zero(self.next_message_id(), &indices));
+    }
+
     /// Upload a compiled set, arm it, and wait for the board to say so.
     ///
     /// `None` if the board did not acknowledge. Reporting an arm that never

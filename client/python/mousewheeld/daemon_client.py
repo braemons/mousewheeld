@@ -194,6 +194,25 @@ class MousewheeldClient:
             call(lambda: self._state.ZeroPosition(state_pb2.ZeroRequest(axes=list(axes))))
         )
 
+    def set_position(self, position_cm: tuple[float, ...], axes: tuple[str, ...] = ()) -> RigState:
+        """Set the API origin to a specific position for vstimd sync.
+
+        Unlike `zero_position` which sets the origin to the current position,
+        `set_position` allows you to specify any position in centimetres.
+        The origin is adjusted so that `position_cm` matches the requested value.
+
+        This is for corridor synchronization: when vstimd resets the camera
+        position, mousewheeld can sync the wheel position to match.
+        """
+        return convert.rig_state_from_wire(
+            call(lambda: self._state.SetPosition(
+                state_pb2.SetPositionRequest(
+                    axes=list(axes),
+                    position_cm=list(position_cm)
+                )
+            ))
+        )
+
     # ---------------------------------------------------------- calibration ---
 
     def calibration(self) -> Calibration:

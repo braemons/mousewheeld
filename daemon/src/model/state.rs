@@ -109,3 +109,23 @@ pub struct ZeroRequest {
     #[serde(default)]
     pub axes: Vec<String>,
 }
+
+/// `StateService.SetPosition`.
+///
+/// Sets the **API origin** to a specific position. Unlike `ZeroPosition` which
+/// sets the origin to the current position, `SetPosition` allows you to
+/// specify any position in centimetres. The origin is adjusted so that
+/// `position_cm` matches the requested value.
+///
+/// This is for vstimd corridor synchronization: when vstimd resets the camera
+/// position, mousewheeld can sync the wheel position to match.
+#[derive(Debug, Clone, Default, serde::Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SetPositionRequest {
+    /// Which axes. Empty means all of them.
+    #[serde(default)]
+    pub axes: Vec<String>,
+    /// Target position in centimetres for each axis.
+    #[serde(default)]
+    pub position_cm: Vec<f64>,
+}

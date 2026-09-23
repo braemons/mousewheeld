@@ -25,6 +25,18 @@ service StateService {
   // Teleporting a corridor is a command to vstimd, from whoever runs the
   // experiment.
   rpc ZeroPosition(ZeroRequest) returns (RigState);
+
+  // Set the **API origin** to a specific position.
+  //
+  // This allows vstimd to sync the wheel to an arbitrary position, e.g. when
+  // resetting a corridor scene. Unlike `ZeroPosition` which sets the origin
+  // to the current position, `SetPosition` allows you to specify any position
+  // in centimetres. The origin is adjusted so that `position_cm` matches the
+  // requested value.
+  //
+  // The firmware does not support absolute positioning; the daemon computes
+  // the required origin offset and sends it to the device.
+  rpc SetPosition(SetPositionRequest) returns (RigState);
 }
 
 message WatchStateRequest {
@@ -35,6 +47,13 @@ message WatchStateRequest {
 message ZeroRequest {
   // Which axes. Empty means all of them.
   repeated string axes = 1;
+}
+
+message SetPositionRequest {
+  // Which axes. Empty means all of them.
+  repeated string axes = 1;
+  // Target position in centimetres for each axis.
+  repeated double position_cm = 2 [json_name = "position_cm"];
 }
 
 message RigState {

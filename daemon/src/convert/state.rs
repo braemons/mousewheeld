@@ -58,3 +58,10 @@ pub fn zero_request_from_wire(request: wire::ZeroRequest) -> m::ZeroRequest {
         axes: request.axes,
     }
 }
+
+pub fn set_position_request_from_wire(request: wire::SetPositionRequest) -> m::SetPositionRequest {
+    m::SetPositionRequest {
+        axes: request.axes,
+        position_cm: request.position_cm,
+    }
+}

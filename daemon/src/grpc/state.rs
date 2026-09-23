@@ -8,7 +8,10 @@ use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::{Stream, StreamExt};
 use tonic::{Request, Response, Status};
 
-use crate::convert::state::{rig_state_to_wire, stream_frame_to_wire, zero_request_from_wire};
+use crate::convert::state::{
+    rig_state_to_wire, set_position_request_from_wire, stream_frame_to_wire,
+    zero_request_from_wire,
+};
 use crate::model::state::StreamFrame;
 use crate::wire;
 use crate::wire::service::state_service_server::{StateService, StateServiceServer};
@@ -76,6 +79,15 @@ impl StateService for super::DaemonServices {
     ) -> Result<Response<wire::RigState>, Status> {
         let zero = zero_request_from_wire(request.into_inner());
         self.daemon.device.zero(&zero.axes);
+        Ok(Response::new(rig_state_to_wire(self.daemon.device.state())))
+    }
+
+    async fn set_position(
+        &self,
+        request: Request<wire::SetPositionRequest>,
+    ) -> Result<Response<wire::RigState>, Status> {
+        let req = set_position_request_from_wire(request.into_inner());
+        self.daemon.device.set_position(&req.axes, &req.position_cm);
         Ok(Response::new(rig_state_to_wire(self.daemon.device.state())))
     }
 }

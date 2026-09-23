@@ -455,6 +455,15 @@ pub struct ZeroRequest {
     pub axes: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SetPositionRequest {
+    /// Which axes. Empty means all of them.
+    #[prost(string, repeated, tag = "1")]
+    pub axes: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Target position in centimetres for each axis.
+    #[prost(double, repeated, tag = "2")]
+    pub position_cm: ::prost::alloc::vec::Vec<f64>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RigState {
     #[prost(message, repeated, tag = "1")]
     pub axes: ::prost::alloc::vec::Vec<AxisState>,
