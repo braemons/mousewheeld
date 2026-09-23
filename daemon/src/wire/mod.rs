@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! The API's types, generated from `proto/mousewheeld/v1/`.
+//! The API's types, generated from `proto/mousewheeld/v1/`, and the board's
+//! link, from `proto/mousewheeld/link/v1/`.
 //!
 //! **Nothing outside `grpc/` and `convert/` names a type from here.** These are
 //! the shapes on the wire; `model/` holds the shapes this daemon thinks in, and
@@ -36,3 +37,11 @@ pub mod service {
 /// argument and return types — without having the `.proto` to hand. It is the
 /// convention a `/api/proto` route would only be a worse version of.
 pub const DESCRIPTOR: &[u8] = include_bytes!("descriptor_for_reflection.bin");
+
+/// The board's link: what the daemon and the firmware say to each other, in
+/// counts. **The one exception to the rule above:** these are named by `link/`
+/// and `device/`, because the link *is* the shape on that wire, and the device
+/// module is the seam between it and `model/`. Nothing else names them.
+pub mod link {
+    include!("link/mousewheeld.link.v1.rs");
+}

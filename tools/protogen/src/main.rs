@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Write `daemon/src/wire/` from `proto/`.
+//! Write `daemon/src/wire/` from `proto/`: the API, and under `link/` the
+//! board's link.
 //!
 //! `prost-build` writes the Rust types and `tonic-prost-build` writes the
 //! `service` blocks as traits the daemon implements. There is no JSON
@@ -85,6 +86,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .btree_map(["."]);
 
     config.compile_protos(&files, &[&proto_root])?;
+
+    // The board's link: a separate package, so no message is shared with the
+    // API by accident, and no JSON mapping or well-known types — a
+    // microcontroller sees counts and nothing else. The firmware generates the
+    // same file with nanopb (`make firmware-proto`).
+    let link_dir = out_dir.join("link");
+    std::fs::create_dir_all(&link_dir)?;
+    prost_build::Config::new()
+        .out_dir(&link_dir)
+        .compile_protos(
+            &[proto_root.join("mousewheeld/link/v1/link.proto")],
+            &[&proto_root],
+        )?;
 
     println!("wrote {}", out_dir.display());
     Ok(())

@@ -1,18 +1,19 @@
 //! A board, in software, on the far end of a pty.
 //!
 //! **This is the firmware's stand-in, not the daemon's.** It speaks
-//! `docs/reference/protocol.md` over a real file descriptor: it parses framed
-//! lines, checks their CRCs, refuses what it does not understand, keeps counts
+//! `docs/reference/protocol.md` over a real file descriptor: it reads COBS
+//! frames, checks their CRCs, decodes the protobuf, refuses what it does not understand, keeps counts
 //! in a 64-bit accumulator, evaluates zones **in counts** on its own scan, and
 //! emits `sample` and `zone_hit` at the rate it was asked for. The daemon on
 //! the other side runs exactly the code it will run against a Teensy.
 //!
-//! What it is not is a reference implementation. The real firmware has an
-//! interrupt, rings, a fixed-format writer and no allocator; this has a thread
-//! and `format!`. Where it is faithful is the **wire and the semantics** —
+//! What it is not is a reference implementation. The real firmware
+//! (`firmware/`, and `mousewheeld_native_device` built from it for this
+//! machine) has an interrupt, rings and no allocator; this has a thread and a
+//! `Vec`. Where it is faithful is the **wire and the semantics** —
 //! which is what the daemon can be wrong about.
 //!
-//! It also does the one thing a happy path never does: **it drops lines**. Every
+//! It also does the one thing a happy path never does: **it drops frames**. Every
 //! few seconds a sample is not written while its `seq` is still consumed, which
 //! is what a full ring on the device looks like from the host. A consumer that
 //! has never seen a gap has never been tested.
@@ -23,15 +24,22 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use crate::link::framing::{check, seal, FramingError};
-use crate::link::messages::WireZone;
-use crate::link::serial::{duplicate, LineReader, LineWriter};
+use prost::Message;
+
+use crate::link::framing::{check, seal};
+use crate::link::serial::{duplicate, FrameReader, FrameWriter};
+use crate::wire::link::{
+    device_message::Body as Reply, host_message::Body as Command, Armed, DeviceMessage,
+    Error as DeviceError, FlashedSet, HelloAck, HostMessage, Ok as Acknowledgement, Origin, Pong,
+    Sample, StateReport, Zone, ZoneHit,
+};
 
 const SCAN_HZ: f64 = 1000.0;
-const MAX_LINE: usize = 512;
+const MAX_FRAME: usize = 256;
+const MAX_ZONES: usize = 16;
 
 struct ZoneRuntime {
-    zone: WireZone,
+    zone: Zone,
     inside: bool,
     armed: bool,
 }
@@ -48,10 +56,10 @@ struct Board {
     /// Zones being uploaded, and the committed set. The live one is untouched
     /// until `zones_end`, so a link that dies mid-upload leaves the board
     /// running what it was running.
-    staging: Vec<WireZone>,
+    staging: Vec<Zone>,
     staged_version: u32,
     staged_name: String,
-    live: Vec<WireZone>,
+    live: Vec<Zone>,
     live_version: u32,
     live_name: String,
     armed: Option<(u32, Vec<ZoneRuntime>)>,
@@ -66,7 +74,7 @@ struct Board {
 
 pub struct BoardSimulator {
     board: Mutex<Board>,
-    writer: Mutex<LineWriter>,
+    writer: Mutex<FrameWriter>,
     running: Arc<AtomicBool>,
     counts_per_cm: f64,
     started: Instant,
@@ -105,7 +113,7 @@ impl BoardSimulator {
                 speed_counts_s: 0.0,
                 next_drop_at: now + Duration::from_secs(5),
             }),
-            writer: Mutex::new(LineWriter::new(fd)),
+            writer: Mutex::new(FrameWriter::new(fd)),
             running: Arc::new(AtomicBool::new(true)),
             counts_per_cm,
             started: now,
@@ -116,7 +124,7 @@ impl BoardSimulator {
         let commands = simulator.clone();
         std::thread::Builder::new()
             .name("board-commands".into())
-            .spawn(move || commands.serve_commands(LineReader::new(reader_fd, MAX_LINE)))?;
+            .spawn(move || commands.serve_commands(FrameReader::new(reader_fd, MAX_FRAME)))?;
 
         let scan = simulator.clone();
         std::thread::Builder::new()
@@ -130,113 +138,98 @@ impl BoardSimulator {
         self.started.elapsed().as_micros() as u64
     }
 
-    fn send(&self, body: &str) {
-        let line = seal(body);
-        let _ = self.writer.lock().unwrap().write_line(&line);
+    /// Seal and write one message, numbered with this board's own counter.
+    fn send(&self, body: Reply) {
+        let message_id = {
+            let mut board = self.board.lock().unwrap();
+            board.message_id = board.message_id.wrapping_add(1);
+            u32::from(board.message_id)
+        };
+        let frame = seal(&DeviceMessage { message_id, body: Some(body) }.encode_to_vec());
+        let _ = self.writer.lock().unwrap().write_frame(&frame);
     }
 
-    /// `msg_type` plus this board's own line counter, ready for more members.
-    fn begin(&self, msg_type: &str) -> String {
-        let mut board = self.board.lock().unwrap();
-        board.message_id = board.message_id.wrapping_add(1);
-        format!(r#"{{"msg_type":"{msg_type}","message_id":{}"#, board.message_id)
+    fn refuse(&self, code: &str, detail: impl Into<String>, answers: Option<u32>) {
+        self.send(Reply::Error(DeviceError {
+            code: code.to_string(),
+            detail: detail.into(),
+            answers,
+        }));
+    }
+
+    fn acknowledge(&self, answers: u32) {
+        self.send(Reply::Ok(Acknowledgement { answers }));
     }
 
     // ------------------------------------------------------- commands ---
 
-    fn serve_commands(&self, mut reader: LineReader) {
+    fn serve_commands(&self, mut reader: FrameReader) {
         while self.running.load(Ordering::Relaxed) {
-            let lines = match reader.read_lines() {
-                Ok(lines) if lines.is_empty() => return, // the host closed the port
-                Ok(lines) => lines,
+            let frames = match reader.read_frames() {
+                Ok(frames) if frames.is_empty() => return, // the host closed the port
+                Ok(frames) => frames,
                 Err(_) => return,
             };
-            for line in lines {
-                match check(&line, MAX_LINE) {
-                    Ok(body) => self.handle(body),
+            for frame in frames {
+                match check(&frame, MAX_FRAME) {
+                    Ok(bytes) => self.handle(&bytes),
                     // Refused by name, never acted on — not even partially.
-                    Err(FramingError::BadCrc { .. }) => {
-                        self.send(&format!(
-                            r#"{},"code":"bad_crc","detail":"the line did not survive the wire""#,
-                            self.begin("error")
-                        ));
-                    }
-                    Err(problem) => {
-                        self.send(&format!(
-                            r#"{},"code":"bad_frame","detail":"{problem}""#,
-                            self.begin("error")
-                        ));
-                    }
+                    Err(problem) => self.refuse("bad_crc", problem.to_string(), None),
                 }
             }
         }
     }
 
-    fn handle(&self, body: &str) {
-        let Ok(value) = serde_json::from_str::<serde_json::Value>(body) else {
-            self.send(&format!(
-                r#"{},"code":"bad_json","detail":"a line that is not an object""#,
-                self.begin("error")
-            ));
+    fn handle(&self, bytes: &[u8]) {
+        let Ok(message) = HostMessage::decode(bytes) else {
+            self.refuse("bad_message", "not a host message", None);
             return;
         };
-        let msg_type = value.get("msg_type").and_then(|v| v.as_str()).unwrap_or("");
-        let message_id = value.get("message_id").and_then(|v| v.as_u64()).unwrap_or(0);
+        let id = message.message_id;
+        let Some(command) = message.body else {
+            self.refuse("unknown_type", "a body this board does not know", Some(id));
+            return;
+        };
 
-        match msg_type {
-            "hello" => self.send_hello_ack(),
-            "ping" => self.send(&format!(r#"{},"answers":{message_id}"#, self.begin("pong"))),
-            "stream" => {
+        match command {
+            Command::Hello(_) => self.send_hello_ack(),
+            Command::Ping(_) => self.send(Reply::Pong(Pong { answers: id })),
+            Command::Stream(stream) => {
                 let mut board = self.board.lock().unwrap();
-                board.rate_hz = value.get("rate_hz").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-                board.velocity = value.get("velocity").and_then(|v| v.as_bool()).unwrap_or(true);
+                board.rate_hz = stream.rate_hz;
+                board.velocity = stream.velocity;
                 drop(board);
-                self.acknowledge(message_id);
+                self.acknowledge(id);
             }
-            "lines" | "axes" | "analog" | "debug" => self.acknowledge(message_id),
-            "zones_begin" => {
+            Command::Axes(_) | Command::Lines(_) | Command::Analog(_) | Command::Debug(_) => {
+                self.acknowledge(id)
+            }
+            Command::ZonesBegin(begin) => {
                 let mut board = self.board.lock().unwrap();
                 board.staging.clear();
-                board.staged_version =
-                    value.get("zone_set_version").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-                board.staged_name = value
-                    .get("name")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or_default()
-                    .to_string();
+                board.staged_version = begin.zone_set_version;
+                board.staged_name = begin.name;
             }
-            "zone" => match serde_json::from_str::<WireZone>(body) {
-                Ok(zone) => {
-                    let mut board = self.board.lock().unwrap();
-                    if board.staging.len() >= 16 {
-                        board.ring_drops += 1;
-                        drop(board);
-                        self.send(&format!(
-                            r#"{},"code":"zone_table_full","detail":"this board holds 16 zones","answers":{message_id}"#,
-                            self.begin("error")
-                        ));
-                        return;
-                    }
-                    board.staging.push(zone);
+            Command::Zone(zone) => {
+                let mut board = self.board.lock().unwrap();
+                if board.staging.len() >= MAX_ZONES {
+                    drop(board);
+                    self.refuse("zone_table_full", format!("this board holds {MAX_ZONES} zones"), Some(id));
+                    return;
                 }
-                Err(problem) => self.send(&format!(
-                    r#"{},"code":"bad_zone","detail":"{problem}","answers":{message_id}"#,
-                    self.begin("error")
-                )),
-            },
-            "zones_end" => {
+                board.staging.push(zone);
+            }
+            Command::ZonesEnd(_) => {
                 let mut board = self.board.lock().unwrap();
                 board.live = std::mem::take(&mut board.staging);
                 board.live_version = board.staged_version;
                 board.live_name = board.staged_name.clone();
                 drop(board);
-                self.acknowledge(message_id);
+                self.acknowledge(id);
             }
-            "arm" => {
-                let arm_id = value.get("arm_id").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-                let origin_is_current =
-                    value.get("origin").and_then(|v| v.as_str()) != Some("absolute");
-                let version = {
+            Command::Arm(arm) => {
+                let origin_is_current = arm.origin != Origin::Absolute as i32;
+                let (version, origin) = {
                     let mut board = self.board.lock().unwrap();
                     if origin_is_current {
                         board.origin = board.counts as i64;
@@ -246,80 +239,72 @@ impl BoardSimulator {
                         .live
                         .iter()
                         .cloned()
-                        .map(|zone| ZoneRuntime {
-                            zone,
-                            inside: false,
-                            armed: true,
-                        })
+                        .map(|zone| ZoneRuntime { zone, inside: false, armed: true })
                         .collect();
-                    board.armed = Some((arm_id, zones));
-                    board.live_version
+                    board.armed = Some((arm.arm_id, zones));
+                    (board.live_version, board.origin)
                 };
-                self.send(&format!(
-                    r#"{},"arm_id":{arm_id},"zone_set_version":{version}"#,
-                    self.begin("armed")
-                ));
+                self.send(Reply::Armed(Armed {
+                    arm_id: arm.arm_id,
+                    zone_set_version: version,
+                    origin: vec![origin],
+                }));
             }
-            "disarm" => {
+            Command::Disarm(_) => {
                 self.board.lock().unwrap().armed = None;
-                self.acknowledge(message_id);
+                self.acknowledge(id);
             }
-            "zero" => {
+            Command::Zero(_) => {
                 let mut board = self.board.lock().unwrap();
                 board.origin = board.counts as i64;
                 board.distance = 0.0;
                 drop(board);
-                self.acknowledge(message_id);
+                self.acknowledge(id);
             }
-            "save" => {
+            Command::Save(_) => {
                 let mut board = self.board.lock().unwrap();
                 if board.live.is_empty() {
                     drop(board);
-                    self.send(&format!(
-                        r#"{},"code":"nothing_to_save","detail":"no zone set is committed","answers":{message_id}"#,
-                        self.begin("error")
-                    ));
+                    self.refuse("nothing_to_save", "no zone set is committed", Some(id));
                     return;
                 }
                 board.flashed = Some((board.live_name.clone(), board.live_version));
                 drop(board);
-                self.acknowledge(message_id);
+                self.acknowledge(id);
             }
-            "state" => self.send_state_report(),
-            _ => self.send(&format!(
-                r#"{},"code":"unknown_type","detail":"{msg_type}","answers":{message_id}"#,
-                self.begin("error")
-            )),
+            Command::State(_) => self.send_state_report(),
         }
-    }
-
-    fn acknowledge(&self, message_id: u64) {
-        self.send(&format!(r#"{},"answers":{message_id}"#, self.begin("ok")));
     }
 
     fn send_hello_ack(&self) {
         let flashed = self.board.lock().unwrap().flashed.clone();
-        let flashed = match flashed {
-            Some((name, version)) => {
-                format!(r#","flashed":{{"name":"{name}","version":{version}}}"#)
-            }
-            None => String::new(),
-        };
-        self.send(&format!(
-            r#"{},"board":"simulated","firmware":"0.0.0+simulated","protocol_version":1,"n_axes":1,"max_zones":16,"max_lines":8,"max_line":{MAX_LINE},"scan_hz":{}{flashed}"#,
-            self.begin("hello_ack"),
-            SCAN_HZ as u32,
-        ));
+        self.send(Reply::HelloAck(HelloAck {
+            board: "simulated".into(),
+            firmware: "0.0.0+simulated".into(),
+            protocol_version: 1,
+            n_axes: 1,
+            max_zones: MAX_ZONES as u32,
+            max_lines: 8,
+            max_frame: MAX_FRAME as u32,
+            scan_hz: SCAN_HZ as u32,
+            flashed: flashed.map(|(name, version)| FlashedSet { name, version }),
+        }));
     }
 
     fn send_state_report(&self) {
         let board = self.board.lock().unwrap();
-        let (counts, origin, drops) = (board.counts as i64, board.origin, board.ring_drops);
+        let report = StateReport {
+            c: vec![board.counts as i64],
+            origin: vec![board.origin],
+            distance: vec![board.distance as i64],
+            v: vec![board.device_velocity],
+            n_axes: 1,
+            stream_rate_hz: board.rate_hz,
+            ring_drops: board.ring_drops,
+            ..Default::default()
+        };
         drop(board);
-        self.send(&format!(
-            r#"{},"c":[{counts}],"origin":[{origin}],"ring_drops":{drops},"scan_overruns":0"#,
-            self.begin("state_report")
-        ));
+        self.send(Reply::StateReport(report));
     }
 
     // ----------------------------------------------------------- scan ---
@@ -348,11 +333,13 @@ impl BoardSimulator {
                     .as_ref()
                     .map(|(id, _)| *id)
                     .unwrap_or(0);
-                self.send(&format!(
-                    r#"{},"seq":{seq},"arm_id":{arm_id},"zone":{zone},"t_us":{},"c":[{counts}]"#,
-                    self.begin("zone_hit"),
-                    self.t_us()
-                ));
+                self.send(Reply::ZoneHit(ZoneHit {
+                    seq,
+                    arm_id,
+                    zone: zone as u32,
+                    t_us: self.t_us(),
+                    c: vec![counts],
+                }));
             }
 
             let rate_hz = self.board.lock().unwrap().rate_hz;
@@ -368,7 +355,8 @@ impl BoardSimulator {
         }
     }
 
-    /// One scan's movement and zone evaluation. Returns `(zone index, seq, counts)`.
+    /// One scan's movement and zone evaluation. Returns `(zone index, seq,
+    /// counts)`, the counts raw as the firmware reports them.
     fn step(&self, now: Instant) -> Vec<(usize, u64, i64)> {
         let mut board = self.board.lock().unwrap();
 
@@ -388,7 +376,8 @@ impl BoardSimulator {
         board.distance += step.abs();
         board.device_velocity = ((step * SCAN_HZ / 20.0).round() * 20.0) as i64;
 
-        let displacement = board.counts as i64 - board.origin;
+        let counts = board.counts as i64;
+        let displacement = counts - board.origin;
         let distance = board.distance as i64;
         let seq = board.seq;
 
@@ -397,14 +386,15 @@ impl BoardSimulator {
         };
         let mut hits = Vec::new();
         for (index, runtime) in zones.iter_mut().enumerate() {
-            let raw = if runtime.zone.m == 1 { distance } else { displacement };
+            let raw = if runtime.zone.metric == 1 { distance } else { displacement };
             let value = if runtime.zone.wrap > 0 {
                 raw.rem_euclid(runtime.zone.wrap)
             } else {
                 raw
             };
-            let inside = runtime.zone.lo[0].is_none_or(|low| value >= low)
-                && runtime.zone.hi[0].is_none_or(|high| value <= high);
+            let interval = runtime.zone.intervals.first().copied().unwrap_or_default();
+            let inside = interval.lo.is_none_or(|low| value >= low)
+                && interval.hi.is_none_or(|high| value <= high);
 
             if inside && !runtime.inside && runtime.armed {
                 // The TTL is scheduled here, in the scan that saw the count.
@@ -412,14 +402,15 @@ impl BoardSimulator {
                 if runtime.zone.fire == 0 {
                     runtime.armed = false;
                 }
-                hits.push((index, seq, value));
+                hits.push((index, seq, counts));
             }
             if !inside && runtime.zone.fire == 1 {
-                let left_by = runtime.zone.lo[0]
+                let left_by = interval
+                    .lo
                     .map(|low| (low - value).max(0))
                     .unwrap_or(0)
-                    .max(runtime.zone.hi[0].map(|high| (value - high).max(0)).unwrap_or(0));
-                if left_by >= runtime.zone.hy {
+                    .max(interval.hi.map(|high| (value - high).max(0)).unwrap_or(0));
+                if left_by >= runtime.zone.hysteresis {
                     runtime.armed = true;
                 }
             }
@@ -449,14 +440,11 @@ impl BoardSimulator {
         if dropped {
             return;
         }
-        let velocity = match velocity {
-            Some(v) => format!(r#","v":[{v}]"#),
-            None => String::new(),
-        };
-        self.send(&format!(
-            r#"{},"seq":{seq},"t_us":{},"c":[{counts}]{velocity}"#,
-            self.begin("sample"),
-            self.t_us()
-        ));
+        self.send(Reply::Sample(Sample {
+            seq,
+            t_us: self.t_us(),
+            c: vec![counts],
+            v: velocity.into_iter().collect(),
+        }));
     }
 }

@@ -1,15 +1,15 @@
 //! The file descriptor under the protocol: a real serial port, or a pty pair.
 //!
 //! **Why a pty and not a mock object.** The board simulator could have been a
-//! function the daemon calls; then the framing, the CRC, the line splitting,
+//! function the daemon calls; then the framing, the CRC, the frame splitting,
 //! the partial read and the reader thread — every part of this link that can
 //! actually be wrong — would be exercised by nothing. On a pty, the daemon runs
-//! the code it will run against a Teensy: bytes in, lines out, and a device on
+//! the code it will run against a Teensy: bytes in, frames out, and a device on
 //! the far end that can be slow, wrong, or gone.
 //!
 //! Raw mode is not optional. A tty in canonical mode buffers by line, echoes
-//! what it receives and translates `\r`; on a link whose messages are
-//! newline-delimited that is three different ways to corrupt a sample.
+//! what it receives and translates `\r` and `\n`; on a link of binary frames
+//! that is three different ways to corrupt a sample.
 
 use std::ffi::CStr;
 use std::io::{self, Read, Write};
@@ -112,63 +112,67 @@ fn termios_speed(baud: u32) -> Option<libc::speed_t> {
     })
 }
 
-/// Reads whole lines off a descriptor, keeping what is left of a partial one.
+/// Reads whole frames off a descriptor, keeping what is left of a partial one.
 ///
 /// A serial read returns whatever bytes have arrived, which is regularly half a
-/// line — the single most common way a hand-written link corrupts its first
-/// message under load.
-pub struct LineReader {
+/// frame — the single most common way a hand-written link corrupts its first
+/// message under load. What comes back is each frame's bytes **without** its
+/// delimiter and unchecked: `framing::check` is the caller's, so a refusal is
+/// logged where the rest of the conversation is.
+pub struct FrameReader {
     file: std::fs::File,
     buffer: Vec<u8>,
-    /// Bytes read so far for the line being assembled.
+    /// Bytes read so far for the frame being assembled.
     pending: Vec<u8>,
-    max_line: usize,
-    /// Set while a too-long line is being skipped to its terminator, so its tail
-    /// is not parsed as a line of its own.
+    max_frame: usize,
+    /// Set while a too-long frame is being skipped to its delimiter, so its
+    /// tail is not taken for a frame of its own.
     discarding: bool,
 }
 
-impl LineReader {
-    pub fn new(fd: OwnedFd, max_line: usize) -> Self {
+impl FrameReader {
+    pub fn new(fd: OwnedFd, max_frame: usize) -> Self {
         Self {
             file: std::fs::File::from(fd),
             buffer: vec![0; 4096],
-            pending: Vec::with_capacity(max_line),
-            max_line,
+            pending: Vec::with_capacity(max_frame),
+            max_frame,
             discarding: false,
         }
     }
 
-    /// Block until at least one line is complete, and return all of them.
+    /// Block until at least one frame is complete, and return all of them.
     ///
     /// Returns an empty vector only at end of file — the board went away.
-    pub fn read_lines(&mut self) -> io::Result<Vec<String>> {
+    pub fn read_frames(&mut self) -> io::Result<Vec<Vec<u8>>> {
         loop {
             let read = self.file.read(&mut self.buffer)?;
             if read == 0 {
                 return Ok(Vec::new());
             }
-            let mut lines = Vec::new();
+            let mut frames = Vec::new();
             for byte in &self.buffer[..read] {
-                if *byte == b'\n' {
-                    if !self.discarding {
-                        lines.push(String::from_utf8_lossy(&self.pending).into_owned());
+                if *byte == 0 {
+                    // Back-to-back delimiters are a sender resynchronising a
+                    // receiver, not an empty frame.
+                    if !self.discarding && !self.pending.is_empty() {
+                        frames.push(std::mem::take(&mut self.pending));
                     }
                     self.pending.clear();
                     self.discarding = false;
                     continue;
                 }
-                if self.pending.len() + 1 >= self.max_line {
+                if self.pending.len() + 1 >= self.max_frame {
                     // Over the limit: drop it and everything up to the next
-                    // newline. Half an object is never handed upwards.
+                    // delimiter. Half a message is never handed upwards.
                     self.pending.clear();
                     self.discarding = true;
                     continue;
                 }
                 self.pending.push(*byte);
             }
-            if !lines.is_empty() {
-                return Ok(lines);
+            if !frames.is_empty() {
+                return Ok(frames);
             }
         }
     }
@@ -176,19 +180,20 @@ impl LineReader {
 
 /// The writing half. Separate from the reader because they are used from
 /// different threads: one blocks on `read`, the other sends commands.
-pub struct LineWriter {
+pub struct FrameWriter {
     file: std::fs::File,
 }
 
-impl LineWriter {
+impl FrameWriter {
     pub fn new(fd: OwnedFd) -> Self {
         Self {
             file: std::fs::File::from(fd),
         }
     }
 
-    pub fn write_line(&mut self, line: &str) -> io::Result<()> {
-        self.file.write_all(line.as_bytes())?;
+    /// Write one sealed frame, delimiter included.
+    pub fn write_frame(&mut self, frame: &[u8]) -> io::Result<()> {
+        self.file.write_all(frame)?;
         self.file.flush()
     }
 }
@@ -203,35 +208,34 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_pty_carries_whole_lines_through_partial_reads() {
+    fn a_pty_carries_whole_frames_through_partial_reads() {
         let (master, slave_path) = pty_pair().expect("a pty");
         let slave = open_port(slave_path.to_str().unwrap(), 0).expect("the slave side");
-        let mut reader = LineReader::new(slave, 512);
+        let mut reader = FrameReader::new(slave, 256);
 
         let mut board = std::fs::File::from(duplicate(&master).unwrap());
-        // Deliberately split across writes, the way a serial port delivers it.
-        board.write_all(b"{\"msg_type\":\"pon").unwrap();
-        board.write_all(b"g\"}\n{\"msg_type\":\"log\"}\n").unwrap();
+        // Deliberately split across writes, the way a serial port delivers it,
+        // with a resynchronising delimiter up front.
+        board.write_all(&[0, 3, 1, 2]).unwrap();
+        board.write_all(&[3, 0, 2, 9, 0]).unwrap();
         board.flush().unwrap();
 
-        let lines = reader.read_lines().unwrap();
-        assert_eq!(lines.len(), 2, "{lines:?}");
-        assert_eq!(lines[0], r#"{"msg_type":"pong"}"#);
-        assert_eq!(lines[1], r#"{"msg_type":"log"}"#);
+        let frames = reader.read_frames().unwrap();
+        assert_eq!(frames, vec![vec![3, 1, 2, 3], vec![2, 9]]);
     }
 
     #[test]
-    fn an_over_long_line_is_discarded_whole_and_the_next_one_survives() {
+    fn an_over_long_frame_is_discarded_whole_and_the_next_one_survives() {
         let (master, slave_path) = pty_pair().expect("a pty");
         let slave = open_port(slave_path.to_str().unwrap(), 0).expect("the slave side");
-        let mut reader = LineReader::new(slave, 64);
+        let mut reader = FrameReader::new(slave, 64);
 
         let mut board = std::fs::File::from(duplicate(&master).unwrap());
-        board.write_all("x".repeat(200).as_bytes()).unwrap();
-        board.write_all(b"\n{\"msg_type\":\"pong\"}\n").unwrap();
+        board.write_all(&[0x55; 200]).unwrap();
+        board.write_all(&[0, 2, 7, 0]).unwrap();
         board.flush().unwrap();
 
-        let lines = reader.read_lines().unwrap();
-        assert_eq!(lines, vec![r#"{"msg_type":"pong"}"#.to_string()]);
+        let frames = reader.read_frames().unwrap();
+        assert_eq!(frames, vec![vec![2, 7]]);
     }
 }

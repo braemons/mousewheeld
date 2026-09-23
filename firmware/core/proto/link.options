@@ -12,6 +12,7 @@ mousewheeld.link.v1.Zero.axes                 max_count:2
 mousewheeld.link.v1.Sample.c                  max_count:2
 mousewheeld.link.v1.Sample.v                  max_count:2
 mousewheeld.link.v1.ZoneHit.c                 max_count:2
+mousewheeld.link.v1.Armed.origin              max_count:2
 mousewheeld.link.v1.StateReport.c             max_count:2
 mousewheeld.link.v1.StateReport.origin        max_count:2
 mousewheeld.link.v1.StateReport.distance      max_count:2

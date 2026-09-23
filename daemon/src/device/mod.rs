@@ -38,8 +38,11 @@ use tokio::sync::broadcast;
 
 use crate::link::continuity::{ClockCorrelation, Continuity};
 use crate::link::framing::check;
-use crate::link::messages::{commands, Command, FromDevice, WireSample, WireZone};
-use crate::link::serial::{duplicate, open_port, pty_pair, LineReader, LineWriter};
+use crate::link::messages::{
+    commands, decode, describe_device, Action, Command, Fire, FromDevice, Interval, Metric,
+    Sample as WireSample, Zone as WireZone,
+};
+use crate::link::serial::{duplicate, open_port, pty_pair, FrameReader, FrameWriter};
 use crate::model::device::{
     Capacities, DeviceInfo, FlashedZoneSet, LinkStats, WireDirection, WireLevel, WireLine,
 };
@@ -77,6 +80,13 @@ const VELOCITY_SPAN_NS: u64 = 250_000_000;
 /// name instead of half-understood, because a protocol this daemon only mostly
 /// speaks is a zone armed at a distance nobody chose.
 const PROTOCOL_VERSION: u32 = 1;
+/// The frame limit before a board has said its own, in encoded bytes including
+/// the delimiter. The ESP32 firmware's, and room for any message this protocol
+/// has.
+const DEFAULT_MAX_FRAME: usize = 256;
+/// How long a zone's pulse is. The authored set has no width yet, so it is the
+/// width statemachined's lines use.
+const ZONE_PULSE_MS: u32 = 10;
 const OLDEST_PROTOCOL_SPOKEN: u32 = 1;
 /// The rule this arrangement exists for, as a compile error rather than a test:
 /// firmware is flashed separately and will be older than the daemon, so a floor
@@ -133,7 +143,7 @@ struct Inner {
     board: String,
     firmware: String,
     protocol_version: u32,
-    max_line: usize,
+    max_frame: usize,
     capacities: Capacities,
     flashed: Option<FlashedZoneSet>,
     connection_count: u64,
@@ -166,7 +176,7 @@ pub struct Device {
     inner: Mutex<Inner>,
     /// Signalled when the board acknowledges an arm.
     armed_ack: Condvar,
-    writer: Mutex<Option<LineWriter>>,
+    writer: Mutex<Option<FrameWriter>>,
     conversation: Mutex<VecDeque<WireLine>>,
     samples: Mutex<VecDeque<WireLine>>,
     frames: broadcast::Sender<StreamFrame>,
@@ -216,7 +226,7 @@ impl Device {
                 board: String::new(),
                 firmware: String::new(),
                 protocol_version: 0,
-                max_line: 512,
+                max_frame: DEFAULT_MAX_FRAME,
                 capacities: Capacities { n_axes: 0, max_zones: 0, max_lines: 0, scan_hz: 0 },
                 flashed: None,
                 connection_count: 0,
@@ -256,8 +266,8 @@ impl Device {
             Backend::Absent => return Ok(()),
             Backend::Port { path, baud } => {
                 let fd = open_port(path, *baud)?;
-                *self.writer.lock().unwrap() = Some(LineWriter::new(duplicate(&fd)?));
-                self.spawn_reader(LineReader::new(fd, 512));
+                *self.writer.lock().unwrap() = Some(FrameWriter::new(duplicate(&fd)?));
+                self.spawn_reader(FrameReader::new(fd, DEFAULT_MAX_FRAME));
                 path.clone()
             }
             Backend::Simulated => {
@@ -272,8 +282,8 @@ impl Device {
                 let (board_side, host_path) = pty_pair()?;
                 board_simulator::BoardSimulator::spawn(board_side, counts_per_cm)?;
                 let fd = open_port(host_path.to_str().unwrap_or_default(), 0)?;
-                *self.writer.lock().unwrap() = Some(LineWriter::new(duplicate(&fd)?));
-                self.spawn_reader(LineReader::new(fd, 512));
+                *self.writer.lock().unwrap() = Some(FrameWriter::new(duplicate(&fd)?));
+                self.spawn_reader(FrameReader::new(fd, DEFAULT_MAX_FRAME));
                 host_path.to_string_lossy().into_owned()
             }
         };
@@ -313,22 +323,22 @@ impl Device {
             .expect("housekeeping needs a thread");
     }
 
-    fn spawn_reader(self: &Arc<Self>, mut reader: LineReader) {
+    fn spawn_reader(self: &Arc<Self>, mut reader: FrameReader) {
         let device = self.clone();
         std::thread::Builder::new()
             .name("device-link".into())
             .spawn(move || {
                 while device.running.load(Ordering::Relaxed) {
-                    let lines = match reader.read_lines() {
-                        Ok(lines) if lines.is_empty() => break,
-                        Ok(lines) => lines,
+                    let frames = match reader.read_frames() {
+                        Ok(frames) if frames.is_empty() => break,
+                        Ok(frames) => frames,
                         Err(problem) => {
                             log::warn!("device link read failed: {problem}");
                             break;
                         }
                     };
-                    for line in lines {
-                        device.receive(&line);
+                    for frame in frames {
+                        device.receive(&frame);
                     }
                 }
                 log::warn!("the device link closed");
@@ -339,22 +349,22 @@ impl Device {
 
     // ------------------------------------------------------- receiving ---
 
-    fn receive(&self, line: &str) {
-        let max_line = self.inner.lock().unwrap().max_line;
-        let body = match check(line, max_line) {
-            Ok(body) => body,
+    fn receive(&self, frame: &[u8]) {
+        let max_frame = self.inner.lock().unwrap().max_frame;
+        let bytes = match check(frame, max_frame) {
+            Ok(bytes) => bytes,
             Err(problem) => {
                 // Never acted on, not even partially.
                 self.note_error(&format!("{problem}"));
-                self.log_wire(WireDirection::In, line, WireLevel::Error);
+                self.log_wire(WireDirection::In, hex(frame), WireLevel::Error);
                 return;
             }
         };
-        let message: FromDevice = match serde_json::from_str(body) {
-            Ok(message) => message,
+        let (message_id, message) = match decode(&bytes) {
+            Ok(decoded) => decoded,
             Err(problem) => {
-                self.note_error(&format!("unreadable line: {problem}"));
-                self.log_wire(WireDirection::In, body, WireLevel::Error);
+                self.note_error(&format!("{problem}"));
+                self.log_wire(WireDirection::In, hex(&bytes), WireLevel::Error);
                 return;
             }
         };
@@ -363,7 +373,7 @@ impl Device {
             FromDevice::Error(_) => WireLevel::Error,
             _ => WireLevel::Info,
         };
-        self.log_wire(WireDirection::In, body, level);
+        self.log_wire(WireDirection::In, describe_device(message_id, &message), level);
 
         match message {
             FromDevice::HelloAck(ack) => {
@@ -395,11 +405,13 @@ impl Device {
                     inner.board = ack.board;
                     inner.firmware = ack.firmware;
                     inner.protocol_version = ack.protocol_version;
-                    inner.max_line = ack.max_line;
+                    if ack.max_frame != 0 {
+                        inner.max_frame = ack.max_frame as usize;
+                    }
                     inner.capacities = Capacities {
-                        n_axes: ack.n_axes,
-                        max_zones: ack.max_zones,
-                        max_lines: ack.max_lines,
+                        n_axes: u8::try_from(ack.n_axes).unwrap_or(u8::MAX),
+                        max_zones: u16::try_from(ack.max_zones).unwrap_or(u16::MAX),
+                        max_lines: u8::try_from(ack.max_lines).unwrap_or(u8::MAX),
                         scan_hz: ack.scan_hz,
                     };
                     inner.flashed = ack
@@ -407,9 +419,15 @@ impl Device {
                         .map(|set| FlashedZoneSet { name: set.name, version: set.version });
                 }
                 // Everything the board needs to be useful, in the order it
-                // needs it: the wiring first, because a zone names a line by
-                // index and an unwired board would fire into nothing, then the
-                // stream. Zones follow only when somebody arms.
+                // needs it: how many axes to count, then the wiring, because a
+                // zone names an axis and a line by index and a board without
+                // them refuses the zone; then the stream. Zones follow only when
+                // somebody arms.
+                let axes = {
+                    let inner = self.inner.lock().unwrap();
+                    inner.axes.len().min(usize::from(inner.capacities.n_axes)).max(1)
+                };
+                self.send(commands::axes(self.next_message_id(), axes));
                 self.send(commands::lines(self.next_message_id(), &self.lines));
                 self.send(commands::stream(
                     self.next_message_id(),
@@ -422,14 +440,24 @@ impl Device {
                 let event = {
                     let mut inner = self.inner.lock().unwrap();
                     let counts_per_cm = inner.axes.first().map(|a| a.counts_per_cm).unwrap_or(1.0);
+                    let zone = hit.zone as usize;
                     let name = inner
                         .armed
                         .as_ref()
-                        .and_then(|armed| armed.set.zones.get(hit.zone))
+                        .and_then(|armed| armed.set.zones.get(zone))
                         .map(|zone| zone.name.clone());
+                    // The board reports its raw counts; where the zone fired is
+                    // the displacement in the host's frame, the one the bounds
+                    // were compiled in.
+                    let displacement = hit.c.first().map(|raw| {
+                        let axis = &inner.axes[0];
+                        let published = raw + inner.continuity.offset(0);
+                        let published = if axis.invert { -published } else { published };
+                        published - axis.origin
+                    });
                     if let Some(armed) = inner.armed.as_mut() {
-                        if let Some(slot) = armed.fired_at.get_mut(hit.zone) {
-                            *slot = hit.c.first().copied();
+                        if let Some(slot) = armed.fired_at.get_mut(zone) {
+                            *slot = displacement;
                         }
                     }
                     let host_ns = inner.clock.observe(hit.t_us, monotonic_ns());
@@ -438,7 +466,7 @@ impl Device {
                         arm_id: hit.arm_id,
                         seq: hit.seq,
                         host_monotonic_ns: host_ns,
-                        position_cm: hit.c.first().copied().unwrap_or(0) as f64 / counts_per_cm,
+                        position_cm: displacement.unwrap_or(0) as f64 / counts_per_cm,
                     })
                 };
                 if let Some(event) = event {
@@ -448,6 +476,14 @@ impl Device {
             FromDevice::Armed(armed) => {
                 let mismatch = {
                     let mut inner = self.inner.lock().unwrap();
+                    // The origin the board set when it read the arm, which is
+                    // later than the sample the host's mirror was set from.
+                    for (index, origin) in armed.origin.iter().enumerate() {
+                        let origin = origin + inner.continuity.offset(index);
+                        if let Some(axis) = inner.axes.get_mut(index) {
+                            axis.origin = if axis.invert { -origin } else { origin };
+                        }
+                    }
                     match inner.armed.as_mut() {
                         Some(set) if set.arm_id == armed.arm_id => {
                             // The board says which version it armed. If that is
@@ -492,7 +528,10 @@ impl Device {
                     }
                 }
                 for (index, origin) in report.origin.iter().enumerate() {
+                    // In the host's frame: offset and sign, as the samples are.
+                    let origin = origin + inner.continuity.offset(index);
                     if let Some(axis) = inner.axes.get_mut(index) {
+                        let origin = &if axis.invert { -origin } else { origin };
                         if axis.origin != *origin {
                             log::debug!(
                                 "{}: adopting the board's origin {origin} (mirror had {})",
@@ -571,7 +610,7 @@ impl Device {
                 let counts = if axis.invert { -counts } else { *counts };
                 axis.distance += (counts - axis.counts).abs();
                 axis.counts = counts;
-                if let Some(velocity) = sample.v.as_ref().and_then(|v| v.get(index)) {
+                if let Some(velocity) = sample.v.get(index) {
                     let velocity = if axis.invert { -velocity } else { *velocity };
                     axis.device_velocity_cm_s = velocity as f64 / axis.counts_per_cm;
                 }
@@ -635,12 +674,12 @@ impl Device {
     }
 
     fn send(&self, command: Command) {
-        let line = command.encode();
-        self.log_wire(WireDirection::Out, line.trim_end(), WireLevel::Info);
+        let frame = command.encode();
+        self.log_wire(WireDirection::Out, command.describe(), WireLevel::Info);
         let mut writer = self.writer.lock().unwrap();
         if let Some(writer) = writer.as_mut() {
-            if let Err(problem) = writer.write_line(&line) {
-                log::warn!("device: could not write {}: {problem}", command.msg_type);
+            if let Err(problem) = writer.write_frame(&frame) {
+                log::warn!("device: could not write {}: {problem}", command.name());
             }
         }
     }
@@ -795,9 +834,9 @@ impl Device {
             &set.name,
         ));
         for (index, zone) in set.zones.iter().enumerate() {
-            self.send(commands::zone(self.next_message_id(), &wire_zone(index, zone)));
+            self.send(commands::zone(self.next_message_id(), wire_zone(index, zone)));
         }
-        self.send(commands::zones_end(self.next_message_id(), 0));
+        self.send(commands::zones_end(self.next_message_id()));
 
         {
             let mut inner = self.inner.lock().unwrap();
@@ -953,25 +992,38 @@ fn speaks_protocol(board: u32) -> bool {
 /// A compiled zone, as the wire carries it: indices and counts, nothing else.
 fn wire_zone(index: usize, zone: &CompiledZone) -> WireZone {
     WireZone {
-        i: index,
-        ax: zone.axis_indices.clone(),
-        m: match zone.metric {
-            ZoneMetric::Displacement => 0,
-            ZoneMetric::Distance => 1,
-        },
-        lo: zone.min_counts.clone(),
-        hi: zone.max_counts.clone(),
+        index: index as u32,
+        intervals: zone
+            .axis_indices
+            .iter()
+            .enumerate()
+            .map(|(i, axis)| Interval {
+                axis: *axis as u32,
+                lo: zone.min_counts.get(i).copied().flatten(),
+                hi: zone.max_counts.get(i).copied().flatten(),
+            })
+            .collect(),
+        metric: match zone.metric {
+            ZoneMetric::Displacement => Metric::Displacement,
+            ZoneMetric::Distance => Metric::Distance,
+        } as i32,
         wrap: zone.wrap_counts.unwrap_or(0),
         fire: match zone.fire {
-            FireRule::Once => 0,
-            FireRule::Rearm => 1,
-        },
-        hy: zone.hysteresis_counts,
-        lvl: zone.level,
-        line: zone.line_index,
-        act: 0,
-        ms: 10,
+            FireRule::Once => Fire::Once,
+            FireRule::Rearm => Fire::Rearm,
+        } as i32,
+        hysteresis: zone.hysteresis_counts,
+        level_on_arm: zone.level,
+        line: u32::from(zone.line_index),
+        action: Action::Pulse as i32,
+        pulse_ms: ZONE_PULSE_MS,
     }
+}
+
+/// Bytes the link could not read, for the monitor: a refused frame is shown as
+/// what arrived, not as what it might have meant.
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect::<Vec<_>>().join(" ")
 }
 
 fn axis_state(axis: &AxisRuntime) -> AxisState {

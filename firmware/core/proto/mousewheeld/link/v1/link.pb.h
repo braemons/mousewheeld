@@ -237,6 +237,13 @@ typedef struct _mousewheeld_link_v1_ZoneHit {
 typedef struct _mousewheeld_link_v1_Armed {
     uint32_t arm_id;
     uint32_t zone_set_version;
+    /* Per axis, the origin the board is evaluating against, in its own raw
+ counts. With `ORIGIN_CURRENT` it was set when the board read the Arm,
+ which is later than any sample the host has: the host adopts this rather
+ than guessing, or every position it reports for the set is off by the
+ stream's lag. */
+    pb_size_t origin_count;
+    int64_t origin[2];
 } mousewheeld_link_v1_Armed;
 
 typedef struct _mousewheeld_link_v1_StateReport {
@@ -397,7 +404,7 @@ extern "C" {
 #define mousewheeld_link_v1_HelloAck_init_default {"", "", 0, 0, 0, 0, 0, 0, false, mousewheeld_link_v1_FlashedSet_init_default}
 #define mousewheeld_link_v1_Sample_init_default  {0, 0, 0, {0, 0}, 0, {0, 0}}
 #define mousewheeld_link_v1_ZoneHit_init_default {0, 0, 0, 0, 0, {0, 0}}
-#define mousewheeld_link_v1_Armed_init_default   {0, 0}
+#define mousewheeld_link_v1_Armed_init_default   {0, 0, 0, {0, 0}}
 #define mousewheeld_link_v1_StateReport_init_default {0, {0, 0}, 0, {0, 0}, 0, {0, 0}, 0, {0, 0}, 0, 0, false, mousewheeld_link_v1_Armed_init_default, 0, false, mousewheeld_link_v1_Analog_init_default, 0, 0, 0, 0, 0}
 #define mousewheeld_link_v1_Ok_init_default      {0}
 #define mousewheeld_link_v1_Error_init_default   {"", "", false, 0}
@@ -427,7 +434,7 @@ extern "C" {
 #define mousewheeld_link_v1_HelloAck_init_zero   {"", "", 0, 0, 0, 0, 0, 0, false, mousewheeld_link_v1_FlashedSet_init_zero}
 #define mousewheeld_link_v1_Sample_init_zero     {0, 0, 0, {0, 0}, 0, {0, 0}}
 #define mousewheeld_link_v1_ZoneHit_init_zero    {0, 0, 0, 0, 0, {0, 0}}
-#define mousewheeld_link_v1_Armed_init_zero      {0, 0}
+#define mousewheeld_link_v1_Armed_init_zero      {0, 0, 0, {0, 0}}
 #define mousewheeld_link_v1_StateReport_init_zero {0, {0, 0}, 0, {0, 0}, 0, {0, 0}, 0, {0, 0}, 0, 0, false, mousewheeld_link_v1_Armed_init_zero, 0, false, mousewheeld_link_v1_Analog_init_zero, 0, 0, 0, 0, 0}
 #define mousewheeld_link_v1_Ok_init_zero         {0}
 #define mousewheeld_link_v1_Error_init_zero      {"", "", false, 0}
@@ -510,6 +517,7 @@ extern "C" {
 #define mousewheeld_link_v1_ZoneHit_c_tag        5
 #define mousewheeld_link_v1_Armed_arm_id_tag     1
 #define mousewheeld_link_v1_Armed_zone_set_version_tag 2
+#define mousewheeld_link_v1_Armed_origin_tag     3
 #define mousewheeld_link_v1_StateReport_c_tag    1
 #define mousewheeld_link_v1_StateReport_origin_tag 2
 #define mousewheeld_link_v1_StateReport_distance_tag 3
@@ -755,7 +763,8 @@ X(a, STATIC,   REPEATED, SINT64,   c,                 5)
 
 #define mousewheeld_link_v1_Armed_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, UINT32,   arm_id,            1) \
-X(a, STATIC,   SINGULAR, UINT32,   zone_set_version,   2)
+X(a, STATIC,   SINGULAR, UINT32,   zone_set_version,   2) \
+X(a, STATIC,   REPEATED, SINT64,   origin,            3)
 #define mousewheeld_link_v1_Armed_CALLBACK NULL
 #define mousewheeld_link_v1_Armed_DEFAULT NULL
 
@@ -868,11 +877,11 @@ extern const pb_msgdesc_t mousewheeld_link_v1_Pong_msg;
 #define MOUSEWHEELD_LINK_V1_MOUSEWHEELD_LINK_V1_LINK_PB_H_MAX_SIZE mousewheeld_link_v1_DeviceMessage_size
 #define mousewheeld_link_v1_Analog_size          41
 #define mousewheeld_link_v1_Arm_size             14
-#define mousewheeld_link_v1_Armed_size           12
+#define mousewheeld_link_v1_Armed_size           34
 #define mousewheeld_link_v1_Axes_size            12
 #define mousewheeld_link_v1_AxisConfig_size      4
 #define mousewheeld_link_v1_Debug_size           2
-#define mousewheeld_link_v1_DeviceMessage_size   222
+#define mousewheeld_link_v1_DeviceMessage_size   244
 #define mousewheeld_link_v1_Disarm_size          6
 #define mousewheeld_link_v1_Error_size           128
 #define mousewheeld_link_v1_FlashedSet_size      40
@@ -888,7 +897,7 @@ extern const pb_msgdesc_t mousewheeld_link_v1_Pong_msg;
 #define mousewheeld_link_v1_Pong_size            6
 #define mousewheeld_link_v1_Sample_size          66
 #define mousewheeld_link_v1_Save_size            0
-#define mousewheeld_link_v1_StateReport_size     213
+#define mousewheeld_link_v1_StateReport_size     235
 #define mousewheeld_link_v1_StateRequest_size    0
 #define mousewheeld_link_v1_Stream_size          8
 #define mousewheeld_link_v1_Zero_size            12

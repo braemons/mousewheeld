@@ -251,6 +251,12 @@ message ZoneHit {
 message Armed {
     uint32 arm_id = 1;
     uint32 zone_set_version = 2;
+    // Per axis, the origin the board is evaluating against, in its own raw
+    // counts. With `ORIGIN_CURRENT` it was set when the board read the Arm,
+    // which is later than any sample the host has: the host adopts this rather
+    // than guessing, or every position it reports for the set is off by the
+    // stream's lag.
+    repeated sint64 origin = 3;
 }
 
 message StateReport {

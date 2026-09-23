@@ -119,6 +119,13 @@ impl Continuity {
         }
     }
 
+    /// What is added to the device's raw counts on `axis` to publish them. For
+    /// the board's other numbers in counts — a zone hit, its origin — that have
+    /// to be put in the same frame as the published accumulator.
+    pub fn offset(&self, axis: usize) -> i64 {
+        self.offsets.get(axis).copied().unwrap_or(0)
+    }
+
     /// The published counts for one sample.
     pub fn publish(&mut self, raw: &[i64]) -> Vec<i64> {
         let mut published = Vec::with_capacity(raw.len());

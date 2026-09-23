@@ -194,6 +194,8 @@ TEST_CASE("upload, arm, and a zone hit with its pulse") {
   REQUIRE(armed.which_body == mousewheeld_link_v1_DeviceMessage_armed_tag);
   CHECK(armed.body.armed.arm_id == 42);
   CHECK(armed.body.armed.zone_set_version == 3);
+  REQUIRE(armed.body.armed.origin_count == 1);
+  CHECK(armed.body.armed.origin[0] == 0);
 
   link.scans(100, 1);
   CHECK(fake::high == 0b1);

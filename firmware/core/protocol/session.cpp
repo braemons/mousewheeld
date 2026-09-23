@@ -284,6 +284,9 @@ void Session::handle(const mousewheeld_link_v1_HostMessage& message, Microsecond
       reply.which_body = mousewheeld_link_v1_DeviceMessage_armed_tag;
       reply.body.armed.arm_id = body.arm.arm_id;
       reply.body.armed.zone_set_version = body.arm.zone_set_version;
+      const Snapshot s = device_.snapshot();
+      reply.body.armed.origin_count = s.n_axes;
+      for (uint8_t a = 0; a < s.n_axes; ++a) reply.body.armed.origin[a] = s.origin[a];
       send(reply);
       return;
     }

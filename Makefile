@@ -47,7 +47,7 @@ proto: ## Regenerate daemon/src/wire/ from proto/
 # `cargo build` is the check.
 check-proto: ## Fail if the proto does not compile or the generated code is stale
 	@protoc --proto_path=proto --descriptor_set_out=/dev/null \
-	  proto/mousewheeld/v1/*.proto
+	  proto/mousewheeld/v1/*.proto proto/mousewheeld/link/v1/*.proto
 	@rm -rf target/proto-check
 	@$(CARGO) run --quiet --manifest-path tools/protogen/Cargo.toml -- target/proto-check
 	@# Against a fresh generation rather than against git: a *new* generated

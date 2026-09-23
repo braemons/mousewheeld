@@ -1,17 +1,24 @@
-//! One line of the wire: the CRC, and the rules for finding it.
+//! One frame of the wire: COBS, the CRC, and the rules for checking them.
 //!
-//! `docs/reference/protocol.md` §1. The two rules that shape this module:
+//! `docs/reference/protocol.md` §1. Both directions, identically:
 //!
-//! - **`crc` is the last member**, so a receiver finds it by scanning backwards
-//!   for `,"crc":"` rather than by parsing. One pass, no buffer — which matters
-//!   on the device and costs the host nothing.
-//! - **A line that fails its CRC is never acted on, not even partially.** It is
-//!   answered with `error`/`bad_crc` and dropped. A half-applied zone upload is
-//!   exactly the failure a CRC exists to prevent.
+//! ```text
+//! COBS( protobuf message ‖ CRC-16 big-endian ) ‖ 0x00
+//! ```
+//!
+//! The two rules that shape this module:
+//!
+//! - **A zero byte ends a frame and appears nowhere else.** COBS guarantees it,
+//!   so a receiver that lost bytes — a USB re-enumeration, a board that reset
+//!   mid-frame — finds the next frame by waiting for the next zero, without
+//!   parsing anything.
+//! - **A frame that fails its CRC is never acted on, not even partially.** It
+//!   is logged and dropped. A half-applied zone upload is exactly the failure a
+//!   CRC exists to prevent.
 
 /// CRC-16/CCITT-FALSE: polynomial 0x1021, initial 0xFFFF, no reflection, no
-/// final XOR. The same parameters statemachined's link uses, for the same
-/// reason — it is what the device can compute as it writes.
+/// final XOR. The same parameters as the firmware's
+/// `firmware/core/protocol/crc16.cpp`.
 pub fn crc16(bytes: &[u8]) -> u16 {
     let mut crc: u16 = 0xFFFF;
     for byte in bytes {
@@ -27,73 +34,122 @@ pub fn crc16(bytes: &[u8]) -> u16 {
     crc
 }
 
-/// What a line can be wrong in. Each one is answered by name, never silently.
+/// What a frame can be wrong in. Each one is reported by name, never silently.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FramingError {
-    /// No `,"crc":"...."` before the closing brace.
-    NoCrc,
-    /// The four hex digits did not match the bytes before them.
+    /// Not valid COBS: a code byte that runs past the end of the frame.
+    BadCobs,
+    /// Shorter than the two bytes of CRC every frame carries.
+    TooShort,
+    /// The CRC did not match the bytes before it.
     BadCrc { expected: u16, found: u16 },
-    /// A byte ≥ 0x80. Non-ASCII text belongs in `log`, escaped.
-    NonAscii,
-    /// Longer than the device said it could hold.
+    /// Longer than the board said it could hold.
     TooLong { limit: usize },
 }
 
 impl std::fmt::Display for FramingError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            FramingError::NoCrc => write!(f, "no crc member"),
+            FramingError::BadCobs => write!(f, "not a COBS frame"),
+            FramingError::TooShort => write!(f, "a frame too short to carry a crc"),
             FramingError::BadCrc { expected, found } => {
-                write!(f, "bad crc: computed {expected:04X}, line says {found:04X}")
+                write!(f, "bad crc: computed {expected:04X}, frame says {found:04X}")
             }
-            FramingError::NonAscii => write!(f, "a byte above 0x7F"),
             FramingError::TooLong { limit } => write!(f, "longer than {limit} bytes"),
         }
     }
 }
 
-const CRC_MEMBER: &str = ",\"crc\":\"";
-
-/// Append the CRC to a line body and terminate it.
-///
-/// `body` is the object without its closing brace — everything the CRC covers.
-pub fn seal(body: &str) -> String {
-    let crc = crc16(body.as_bytes());
-    format!("{body}{CRC_MEMBER}{crc:04X}\"}}\n")
+/// Seal an encoded message into a frame, delimiter included.
+pub fn seal(message: &[u8]) -> Vec<u8> {
+    let mut sealed = Vec::with_capacity(message.len() + 2);
+    sealed.extend_from_slice(message);
+    sealed.extend_from_slice(&crc16(message).to_be_bytes());
+    let mut frame = cobs_encode(&sealed);
+    frame.push(0);
+    frame
 }
 
-/// Check a received line and hand back the JSON object it carries.
-///
-/// The returned slice includes the `crc` member: it is a well-formed object and
-/// a reader that ignores unknown members — which both sides must — reads it
-/// unchanged. Stripping it would mean rebuilding the line.
-pub fn check(line: &str, max_line: usize) -> Result<&str, FramingError> {
-    let line = line.strip_suffix('\n').unwrap_or(line);
-    let line = line.strip_suffix('\r').unwrap_or(line);
-    if line.len() + 1 > max_line {
-        return Err(FramingError::TooLong { limit: max_line });
+/// Check one frame's bytes — without its delimiter — and hand back the message
+/// it carries.
+pub fn check(frame: &[u8], max_frame: usize) -> Result<Vec<u8>, FramingError> {
+    // The limit counts the delimiter, as the board's does.
+    if frame.len() + 1 > max_frame {
+        return Err(FramingError::TooLong { limit: max_frame });
     }
-    if !line.is_ascii() {
-        return Err(FramingError::NonAscii);
+    let mut decoded = cobs_decode(frame).ok_or(FramingError::BadCobs)?;
+    if decoded.len() < 2 {
+        return Err(FramingError::TooShort);
     }
-    // Backwards, as the protocol promises: the last occurrence is the framing
-    // one even if a string member happens to contain the same bytes.
-    let at = line.rfind(CRC_MEMBER).ok_or(FramingError::NoCrc)?;
-    let covered = &line[..at];
-    let rest = &line[at + CRC_MEMBER.len()..];
-    let digits = rest.get(..4).ok_or(FramingError::NoCrc)?;
-    let found = u16::from_str_radix(digits, 16).map_err(|_| FramingError::NoCrc)?;
-    let expected = crc16(covered.as_bytes());
+    let at = decoded.len() - 2;
+    let found = u16::from_be_bytes([decoded[at], decoded[at + 1]]);
+    decoded.truncate(at);
+    let expected = crc16(&decoded);
     if expected != found {
         return Err(FramingError::BadCrc { expected, found });
     }
-    Ok(line)
+    Ok(decoded)
+}
+
+fn cobs_encode(input: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(input.len() + input.len() / 254 + 2);
+    let mut code_at = 0;
+    out.push(0);
+    let mut code: u8 = 1;
+    for byte in input {
+        if *byte == 0 {
+            out[code_at] = code;
+            code_at = out.len();
+            out.push(0);
+            code = 1;
+            continue;
+        }
+        out.push(*byte);
+        code += 1;
+        if code == 0xFF {
+            out[code_at] = code;
+            code_at = out.len();
+            out.push(0);
+            code = 1;
+        }
+    }
+    out[code_at] = code;
+    out
+}
+
+fn cobs_decode(input: &[u8]) -> Option<Vec<u8>> {
+    let mut out = Vec::with_capacity(input.len());
+    let mut read = 0;
+    while read < input.len() {
+        let code = input[read];
+        read += 1;
+        if code == 0 {
+            return None;
+        }
+        for _ in 1..code {
+            let byte = *input.get(read)?;
+            if byte == 0 {
+                return None;
+            }
+            out.push(byte);
+            read += 1;
+        }
+        // A zero was elided after every group but a full one and the last.
+        if code != 0xFF && read < input.len() {
+            out.push(0);
+        }
+    }
+    Some(out)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn body(frame: &[u8]) -> &[u8] {
+        assert_eq!(frame.last(), Some(&0), "a frame ends with its delimiter");
+        &frame[..frame.len() - 1]
+    }
 
     #[test]
     fn the_crc_matches_the_reference_vector() {
@@ -103,46 +159,60 @@ mod tests {
     }
 
     #[test]
-    fn a_sealed_line_checks_out() {
-        let line = seal(r#"{"msg_type":"ping","message_id":41"#);
-        assert!(line.ends_with("\"}\n"));
-        assert!(check(&line, 512).is_ok());
+    fn a_sealed_frame_checks_out_and_has_no_zero_inside() {
+        let message = [0x08, 0x00, 0x2A, 0x00, 0xFF];
+        let frame = seal(&message);
+        assert!(!body(&frame).contains(&0));
+        assert_eq!(check(body(&frame), 256).unwrap(), message);
+    }
+
+    #[test]
+    fn cobs_round_trips_across_the_254_byte_boundary() {
+        for len in [0usize, 1, 253, 254, 255, 508, 600] {
+            let mut run = vec![0x42u8; len];
+            if len > 2 {
+                run[len / 2] = 0;
+            }
+            let encoded = cobs_encode(&run);
+            assert!(!encoded.contains(&0), "len {len}");
+            assert_eq!(cobs_decode(&encoded).unwrap(), run, "len {len}");
+        }
     }
 
     #[test]
     fn a_flipped_byte_is_refused_rather_than_parsed() {
-        let line = seal(r#"{"msg_type":"sample","seq":41822,"c":[173884]"#);
-        let corrupted = line.replace("173884", "173885");
-        match check(&corrupted, 512) {
+        let mut frame = seal(&[1, 2, 3, 4, 5, 6]);
+        frame[3] ^= 0x01;
+        match check(body(&frame), 256) {
             Err(FramingError::BadCrc { .. }) => {}
             other => panic!("{other:?}"),
         }
     }
 
     #[test]
-    fn a_truncated_line_is_refused() {
-        let line = seal(r#"{"msg_type":"ping","message_id":41"#);
-        let truncated = &line[..line.len() / 2];
-        assert!(check(truncated, 512).is_err());
+    fn a_truncated_frame_is_refused() {
+        let frame = seal(&[1, 2, 3, 4, 5, 6, 7, 8]);
+        assert!(check(&frame[..frame.len() / 2], 256).is_err());
     }
 
     #[test]
-    fn a_line_over_the_limit_is_refused_by_length_not_by_crc() {
-        let line = seal(&format!(r#"{{"msg_type":"log","text":"{}""#, "x".repeat(600)));
-        assert_eq!(check(&line, 512), Err(FramingError::TooLong { limit: 512 }));
+    fn a_frame_over_the_limit_is_refused_by_length_not_by_crc() {
+        let frame = seal(&[7u8; 300]);
+        assert_eq!(check(body(&frame), 256), Err(FramingError::TooLong { limit: 256 }));
     }
 
+    /// The firmware's own bytes for `DeviceMessage{hello_ack{board: "native",
+    /// …}}`, as `mousewheeld_native_device` wrote them at boot. A frame sealed
+    /// by one side and checked by the other is the only test that the two
+    /// implementations of COBS and the CRC agree.
     #[test]
-    fn a_crc_inside_a_string_does_not_fool_the_scan() {
-        // The backwards scan finds the framing member, not the decoy in `text`.
-        let line = seal(r#"{"msg_type":"log","text":"got ,\"crc\":\"0000\""#);
-        assert!(check(&line, 512).is_ok());
-    }
-
-    #[test]
-    fn a_carriage_return_before_the_newline_is_ignored() {
-        let line = seal(r#"{"msg_type":"pong","message_id":7"#);
-        let with_cr = line.replace('\n', "\r\n");
-        assert!(check(&with_cr, 512).is_ok());
+    fn a_frame_the_firmware_wrote_checks_out() {
+        let from_firmware: &[u8] = &[
+            0x22, 0x52, 0x1d, 0x0a, 0x06, 0x6e, 0x61, 0x74, 0x69, 0x76, 0x65, 0x12, 0x05, 0x30,
+            0x2e, 0x30, 0x2e, 0x30, 0x18, 0x01, 0x20, 0x02, 0x28, 0x10, 0x30, 0x08, 0x38, 0x80,
+            0x02, 0x40, 0x88, 0x27, 0xc6, 0xae,
+        ];
+        let message = check(from_firmware, 256).unwrap();
+        assert_eq!(&message[..3], &[0x52, 0x1d, 0x0a], "field 10 (hello_ack), 29 bytes");
     }
 }
