@@ -1283,7 +1283,7 @@ mod tests {
             level: false,
             line_index: 0,
         };
-        let interval = |zone: &CompiledZone, inverted| wire_zone(0, zone, &[inverted]).intervals[0].clone();
+        let interval = |zone: &CompiledZone, inverted| wire_zone(0, zone, &[inverted]).intervals[0];
         assert_eq!((interval(&zone, false).lo, interval(&zone, false).hi), (Some(400), None));
         assert_eq!((interval(&zone, true).lo, interval(&zone, true).hi), (None, Some(-400)));
 
