@@ -50,6 +50,11 @@ class StateServiceStub:
                 request_serializer=mousewheeld_dot_v1_dot_state__pb2.ZeroRequest.SerializeToString,
                 response_deserializer=mousewheeld_dot_v1_dot_state__pb2.RigState.FromString,
                 _registered_method=True)
+        self.SetPosition = channel.unary_unary(
+                '/mousewheeld.v1.StateService/SetPosition',
+                request_serializer=mousewheeld_dot_v1_dot_state__pb2.SetPositionRequest.SerializeToString,
+                response_deserializer=mousewheeld_dot_v1_dot_state__pb2.RigState.FromString,
+                _registered_method=True)
 
 
 class StateServiceServicer:
@@ -88,6 +93,22 @@ class StateServiceServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def SetPosition(self, request, context):
+        """Set the **API origin** to a specific position.
+
+        This allows vstimd to sync the wheel to an arbitrary position, e.g. when
+        resetting a corridor scene. Unlike `ZeroPosition` which sets the origin
+        to the current position, `SetPosition` allows you to specify any position
+        in centimetres. The origin is adjusted so that `position_cm` matches the
+        requested value.
+
+        The firmware does not support absolute positioning; the daemon computes
+        the required origin offset and sends it to the device.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_StateServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -104,6 +125,11 @@ def add_StateServiceServicer_to_server(servicer, server):
             'ZeroPosition': grpc.unary_unary_rpc_method_handler(
                     servicer.ZeroPosition,
                     request_deserializer=mousewheeld_dot_v1_dot_state__pb2.ZeroRequest.FromString,
+                    response_serializer=mousewheeld_dot_v1_dot_state__pb2.RigState.SerializeToString,
+            ),
+            'SetPosition': grpc.unary_unary_rpc_method_handler(
+                    servicer.SetPosition,
+                    request_deserializer=mousewheeld_dot_v1_dot_state__pb2.SetPositionRequest.FromString,
                     response_serializer=mousewheeld_dot_v1_dot_state__pb2.RigState.SerializeToString,
             ),
     }
@@ -188,6 +214,33 @@ class StateService:
             target,
             '/mousewheeld.v1.StateService/ZeroPosition',
             mousewheeld_dot_v1_dot_state__pb2.ZeroRequest.SerializeToString,
+            mousewheeld_dot_v1_dot_state__pb2.RigState.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def SetPosition(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/mousewheeld.v1.StateService/SetPosition',
+            mousewheeld_dot_v1_dot_state__pb2.SetPositionRequest.SerializeToString,
             mousewheeld_dot_v1_dot_state__pb2.RigState.FromString,
             options,
             channel_credentials,

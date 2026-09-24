@@ -18,6 +18,14 @@ class ZeroRequest(_message.Message):
     axes: _containers.RepeatedScalarFieldContainer[str]
     def __init__(self, axes: _Optional[_Iterable[str]] = ...) -> None: ...
 
+class SetPositionRequest(_message.Message):
+    __slots__ = ("axes", "position_cm")
+    AXES_FIELD_NUMBER: _ClassVar[int]
+    POSITION_CM_FIELD_NUMBER: _ClassVar[int]
+    axes: _containers.RepeatedScalarFieldContainer[str]
+    position_cm: _containers.RepeatedScalarFieldContainer[float]
+    def __init__(self, axes: _Optional[_Iterable[str]] = ..., position_cm: _Optional[_Iterable[float]] = ...) -> None: ...
+
 class RigState(_message.Message):
     __slots__ = ("axes", "health", "link")
     AXES_FIELD_NUMBER: _ClassVar[int]
