@@ -37,6 +37,14 @@ jobs:
           version=$(make -s print-version)
           [ "v$version" = "$GITHUB_REF_NAME" ] || { echo "::error::tag $GITHUB_REF_NAME != Cargo.toml $version"; exit 1; }
       - uses: dtolnay/rust-toolchain@stable
+      # `vinput` comes from vstimd's repository, and cargo checks out a git
+      # dependency's submodules too -- two of which vstimd names by SSH URL.
+      # They are public; a runner has no key, so fetch them over HTTPS, with
+      # git itself, which is what reads this rewrite.
+      - name: Fetch git dependencies over HTTPS
+        run: |
+          git config --global url."https://github.com/".insteadOf git@github.com:
+          echo CARGO_NET_GIT_FETCH_WITH_CLI=true >> "$GITHUB_ENV"
       - name: Install nfpm
         run: |
           curl -fsSL "https://github.com/goreleaser/nfpm/releases/download/v2.43.1/nfpm_2.43.1_Linux_${{ matrix.nfpm }}.tar.gz" \
