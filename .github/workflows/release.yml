@@ -1,0 +1,140 @@
+name: Release
+
+# Tag-driven release: the .deb and .rpm for both architectures, the client's
+# wheel and the ESP32 image, published on a GitHub Release.
+#
+#   git tag v0.3.0-alpha1 && git push origin v0.3.0-alpha1
+#
+# The tag must match the workspace version in Cargo.toml, which is the one
+# place a release number is written; the first step of every job checks it.
+# Manual runs build everything and publish nothing (see the `release` job's if:).
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # ── .deb / .rpm ────────────────────────────────────────────────────────────
+  # Built natively on each architecture, on Ubuntu 24.04, so the binary links
+  # against a glibc that a rig of that age or newer has.
+  packages:
+    name: packages-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: amd64, runner: ubuntu-24.04, nfpm: x86_64 }
+          - { arch: arm64, runner: ubuntu-24.04-arm, nfpm: arm64 }
+    steps:
+      - uses: actions/checkout@v4
+      - name: The tag is the workspace version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version=$(make -s print-version)
+          [ "v$version" = "$GITHUB_REF_NAME" ] || { echo "::error::tag $GITHUB_REF_NAME != Cargo.toml $version"; exit 1; }
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install nfpm
+        run: |
+          curl -fsSL "https://github.com/goreleaser/nfpm/releases/download/v2.43.1/nfpm_2.43.1_Linux_${{ matrix.nfpm }}.tar.gz" \
+            | tar -xz -C /usr/local/bin nfpm
+      - name: Build
+        run: make package ARCH=${{ matrix.arch }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg-${{ matrix.arch }}
+          path: dist/*.*
+          if-no-files-found: error
+          retention-days: 7
+
+  # ── The client's wheel ─────────────────────────────────────────────────────
+  wheel:
+    name: client wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Build
+        run: make wheel
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel
+          path: dist/*.whl
+          if-no-files-found: error
+          retention-days: 7
+
+  # ── The ESP32 image ────────────────────────────────────────────────────────
+  firmware:
+    name: firmware
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Build
+        run: |
+          make firmware
+          mkdir -p image
+          for part in firmware bootloader partitions; do
+            cp firmware/.pio/build/esp32/$part.bin image/mousewheeld-esp32-$part.bin
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: image/*
+          if-no-files-found: error
+          retention-days: 7
+
+  # ── Publish ───────────────────────────────────────────────────────────────
+  release:
+    needs: [packages, wheel, firmware]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Collect release assets
+        run: |
+          mkdir -p release
+          find artifacts -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.whl' -o -name '*.bin' \) \
+               -exec cp -v {} release/ \;
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=$GITHUB_REF_NAME
+          NOTES=$(cat <<'EOF'
+          ## Installing
+
+          **Debian / Ubuntu / Raspberry Pi OS** — `sudo apt install ./mousewheeld_*_<arch>.deb`
+
+          **Fedora / RHEL** — `sudo dnf install ./mousewheeld-*.<arch>.rpm`
+
+          Say which axes the rig has in `/etc/braemons/mousewheeld-rig-config.toml`,
+          then `sudo systemctl start mousewheeld`. The daemon is one binary,
+          `/usr/bin/mousewheeld`, with its panels inside it.
+
+          ## The client
+
+          `mousewheeld_client-*.whl` is the Python client for this release's
+          gRPC API: `pip install ./mousewheeld_client-*.whl`.
+
+          ## Firmware
+
+          The ESP32 image, flashed with esptool at the usual offsets:
+          `esptool.py write_flash 0x1000 mousewheeld-esp32-bootloader.bin 0x8000 mousewheeld-esp32-partitions.bin 0x10000 mousewheeld-esp32-firmware.bin`,
+          or from a checkout with `cd firmware && uvx platformio run -e esp32 -t upload`.
+          EOF
+          )
+          PRERELEASE=
+          case "$TAG" in *-*) PRERELEASE=--prerelease ;; esac
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" release/* --clobber
+          else
+            gh release create "$TAG" release/* \
+              --title "$TAG" --notes "$NOTES" --verify-tag $PRERELEASE
+          fi

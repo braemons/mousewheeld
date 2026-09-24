@@ -7,8 +7,10 @@ CARGO ?= cargo
 PORT ?= 8083
 VERSION ?= $(shell sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
 ARCH ?= amd64
+# The same version as PEP 440 spells it, for the client's wheel: 0.3.0-alpha1 is 0.3.0a1.
+PY_VERSION ?= $(shell echo '$(VERSION)' | sed -e 's/-alpha/a/' -e 's/-beta/b/' -e 's/-rc/rc/')
 
-.PHONY: build test check proto check-proto web check-web client check-schema check-text run dev schema package clean help firmware-proto test-firmware firmware
+.PHONY: build test check proto check-proto web check-web client check-schema check-text run dev schema package wheel print-version clean help firmware-proto test-firmware firmware
 
 help:
 	@sed -n 's/^\([a-z-]*\):.*## \(.*\)/  \1|\2/p' $(MAKEFILE_LIST) | column -t -s '|'
@@ -137,8 +139,21 @@ check-schema: ## Fail if the committed schema is not what the code produces
 
 package: build ## deb and rpm, from packaging/nfpm.yaml
 	@mkdir -p dist
-	VERSION=$(VERSION) ARCH=$(ARCH) nfpm package -f packaging/nfpm.yaml -p deb -t dist/
-	VERSION=$(VERSION) ARCH=$(ARCH) nfpm package -f packaging/nfpm.yaml -p rpm -t dist/
+	cd packaging && VERSION=$(VERSION) ARCH=$(ARCH) nfpm package -f nfpm.yaml -p deb -t ../dist/
+	cd packaging && VERSION=$(VERSION) ARCH=$(ARCH) nfpm package -f nfpm.yaml -p rpm -t ../dist/
+
+print-version: ## The version a build of this checkout carries
+	@echo $(VERSION)
+
+# The client's pyproject carries the 0.0.0 sentinel, so the release version is
+# stamped into a copy of it here rather than hand-edited in the tree: the
+# workspace version in Cargo.toml is the one place a release number is written.
+wheel: ## The Python client's wheel, stamped with the workspace version
+	@rm -rf target/wheel && mkdir -p target/wheel dist
+	@tar -C client/python --exclude=.venv --exclude=build --exclude=dist \
+	  --exclude=__pycache__ --exclude=.pytest_cache -cf - . | tar -C target/wheel -xf -
+	cd target/wheel && uv version --frozen $(PY_VERSION) >/dev/null && \
+	  uv build --wheel --out-dir $(CURDIR)/dist
 
 clean:
 	$(CARGO) clean
@@ -158,4 +173,4 @@ test-firmware: ## The firmware core's unit tests, on the host, under ASan and UB
 	ctest --test-dir firmware/build --output-on-failure
 
 firmware: ## The ESP32 image (firmware/.pio/build/esp32/firmware.bin)
-	cd firmware && uvx --with pip platformio run -e esp32
+	cd firmware && MOUSEWHEELD_FIRMWARE_VERSION=$(VERSION) uvx --with pip platformio run -e esp32
