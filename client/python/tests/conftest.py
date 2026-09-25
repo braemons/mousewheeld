@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from mousewheeld import MousewheeldClient
+from mousewheeld_client import MousewheeldClient
 
 #: Built by `cargo build --release` in the repository root, two levels up.
 DAEMON = Path(__file__).resolve().parents[3] / "target" / "release" / "mousewheeld"
@@ -38,10 +38,8 @@ def wheel():
 
     port = a_free_port()
     with tempfile.TemporaryDirectory() as scratch:
-        # A copy of the rig config, never the repository's own: **the daemon
-        # rewrites it** when a calibration is applied, and one test run would
-        # otherwise leave the packaged file rewritten and stripped of its
-        # comments.
+        # A copy of the rig config beside the storage directory, so a run
+        # reads exactly the packaged file and leaves nothing behind.
         config = Path(scratch) / "rig-config.toml"
         config.write_text(RIG_CONFIG.read_text())
 

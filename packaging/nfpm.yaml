@@ -9,7 +9,9 @@
 # embedded in it, so the package is a binary, a unit, a udev rule and a config —
 # there is no web root to serve and nothing to keep in step with it.
 
-name: mousewheeld
+# `braemons-` is the archive's prefix, as for every daemon in the family; the
+# binary, the unit and the user inside are plain `mousewheeld`.
+name: braemons-mousewheeld
 arch: ${ARCH}
 platform: linux
 version: ${VERSION}
@@ -43,8 +45,9 @@ contents:
   - src: ./mousewheeld.sysusers.conf
     dst: /usr/lib/sysusers.d/mousewheeld.conf
 
-  # The rig's own settings: never replaced by an upgrade, because the
-  # calibration in it was measured on this wheel.
+  # The rig's own settings: never replaced by an upgrade, because they are
+  # this box's wiring. A measured calibration lives beside the zone sets, in
+  # /var/lib/braemons/mousewheeld/calibration.toml.
   - src: ./mousewheeld-rig-config.toml
     dst: /etc/braemons/mousewheeld-rig-config.toml
     type: config|noreplace

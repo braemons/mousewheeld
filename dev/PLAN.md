@@ -138,7 +138,9 @@ paths are exercised even though no rig has a second axis.
 
 ### Calibration
 
-Per axis, host side, persisted in the rig config:
+Per axis, host side. The rig config's `[[axis]]` tables are the starting point; a
+calibration applied over the API is persisted to
+`/var/lib/braemons/mousewheeld/calibration.toml` and overrides them by name:
 
 ```toml
 [[axis]]
@@ -706,11 +708,11 @@ and bulk data "belongs in its own file referenced by path" (triald `dev/PLAN.md`
 
 ## The API
 
-**gRPC** on **8083** (vstimd 8080, statemachined 8081 + 8082, triald 8420 +
-8421), with gRPC-Web on the same port for the panels and server reflection for
-everything else. Two numbers for the Python daemons because they cannot serve
+**gRPC** on **8083** (vstimd 8080, statemachined 8081, triald 8420 + 8421),
+with gRPC-Web on the same port for the panels and server reflection for
+everything else. Two numbers for triald because a Python daemon cannot serve
 gRPC and a browser on one socket; one for this daemon because tonic-web can.
-That is why this moved off 8082 — see `contracts/DAEMON_LAYOUT.md`.
+This moved off 8082 when statemachined was still Python and held it — see `contracts/DAEMON_LAYOUT.md`.
 
 Units in names, as in vstimd: `position_cm`, `counts_per_cm`, `velocity_cm_s`.
 
@@ -930,12 +932,12 @@ contract. Each is rewritten here to this project's shapes.
 
 | | | |
 |---|---|---|
-| **M0** | ⬜ | Firmware core: counter extension, origin/odometer, zones, rings, framing, JSON reader, fixed writers. Host tests green under gcc/clang and sanitizers |
-| **M1** | ⬜ | Teensy 4.1 HAL, then ESP32 HAL. Analog output, flash, debug mode. **Scan rate and link cost measured and asserted** |
-| **M2** | 🟨 | Daemon. **Built:** the control side — API and model types, zone-set store and compiler with per-trial patches, calibration and its measurement procedure, config and line map, generated OpenAPI, `/elements/` embedded — and the link: `docs/reference/protocol.md`, framing and CRC, the typed messages, the serial port in raw mode, the reader thread, clock correlation, the continuity offset, and a board simulator on a pty. **Left:** the thread's *real-time* discipline (a dedicated thread at elevated priority, no allocation on the per-sample path), marks and the path ring, recording, and the Python client |
+| **M0** | ✅ | Firmware core: counter extension, origin/odometer, zones, rings, framing, fixed writers. **Built:** `firmware/core/`, on the COBS + protobuf link through nanopb (it was planned as a JSON reader), with host tests under ASan and UBSan (`make test-firmware`) |
+| **M1** | 🟨 | Teensy 4.1 HAL, then ESP32 HAL. Analog output, flash, debug mode. **Scan rate and link cost measured and asserted.** **So far:** the ESP32 HAL (`firmware/hal/esp32.cpp`); no Teensy HAL, nothing measured |
+| **M2** | 🟨 | Daemon. **Built:** the control side — API and model types, zone-set store and compiler with per-trial patches, calibration and its measurement procedure, config and line map, `/elements/` embedded — and the link: `docs/reference/protocol.md`, framing and CRC, the typed messages, the serial port in raw mode, the reader thread, clock correlation, the continuity offset, and a board simulator on a pty. **Left:** the thread's *real-time* discipline (a dedicated thread at elevated priority, no allocation on the per-sample path), marks and the path ring, and recording. The Python client (`client/python/`, `MousewheeldClient`) is built; the generated OpenAPI document is gone, replaced by `proto/mousewheeld/v1/` |
 | **M3** | 🟨 | vinput producer. **Built:** the segment is created from the rig config's axes and written first of the three publications, in centimetres, through vstimd's `vinput` crate pinned at `v0.3.0-alpha1`; verified against a running vstimd, which reads the same numbers with no torn reads and no starved frames. **Left:** encoder-to-photon latency, which needs a board and a photodiode |
 | **M4** | ⬜ | ZMQ PUB with `events.proto`; `mousewheeld relay` |
 | **M5** | ⬜ | Zones end to end: line map from the rig config, store, patches, compiler, arm, flash, TTL into statemachined and daqd |
-| **M6** | 🟨 | Web client and packaging. **Built:** the five console elements, served from the binary with `rust-embed`; nfpm, the systemd unit with `CAP_SYS_NICE`, the udev rule and sysusers. **Left:** mDNS `_mousewheeld._tcp`, and the console's `SERVICE_TYPES` line |
+| **M6** | 🟨 | Web client and packaging. **Built:** the five console elements, served from the binary with `rust-embed`; nfpm, the systemd unit with `CAP_SYS_NICE`, the udev rule and sysusers. The console knows the daemon (`SERVICE_TYPES`, its `rigs.json`). **Left:** mDNS `_mousewheeld._tcp`, without which the console finds it only through `rigs.json` |
 | **M7** | ⬜ | triald: marks, `mousewheel_zone_set`, contribution; a contracts end-to-end stage |
 | — | ⬜ | 2-D ball: optical sensor HAL, ball calibration, `x`/`y`/`yaw` descriptor — when the hardware exists |

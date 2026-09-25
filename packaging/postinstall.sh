@@ -12,15 +12,15 @@ systemctl daemon-reload >/dev/null 2>&1 || true
 udevadm control --reload-rules >/dev/null 2>&1 || true
 udevadm trigger --subsystem-match=tty >/dev/null 2>&1 || true
 
-if [ ! -d /var/lib/mousewheeld ]; then
-  mkdir -p /var/lib/mousewheeld
-  chown mousewheeld:mousewheeld /var/lib/mousewheeld 2>/dev/null || true
+if [ ! -d /var/lib/braemons/mousewheeld ]; then
+  mkdir -p /var/lib/braemons/mousewheeld
+  chown mousewheeld:mousewheeld /var/lib/braemons/mousewheeld 2>/dev/null || true
 fi
 
 cat <<'MESSAGE'
 mousewheeld is installed and not running.
 
-  Edit  /etc/braemons/mousewheeld-rig-config.toml   (the port, the lines, the calibration)
+  Edit  /etc/braemons/mousewheeld-rig-config.toml   (the port, the lines, the starting calibration)
   Then  systemctl enable --now mousewheeld
   Panels at  http://<this rig>:8083/     gRPC on the same port (grpcurl -plaintext <rig>:8083 list)
 

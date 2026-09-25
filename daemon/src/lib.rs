@@ -10,12 +10,13 @@
 //! interface at the top, and `convert/` the seam between the two.
 
 pub mod convert;
-pub mod file_schema;
-pub mod file_schema_types;
 pub mod daemon_state;
 pub mod device;
+pub mod file_schema;
+pub mod file_schema_types;
 pub mod grpc;
 pub mod link;
+pub mod mdns_service_advertisement;
 pub mod model;
 pub mod publish;
 pub mod web;

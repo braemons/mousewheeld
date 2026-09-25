@@ -6,8 +6,12 @@
 //! calibration are changed per session, by a person at a console, and are.
 //!
 //! The file is TOML at `/etc/braemons/mousewheeld-rig-config.toml`, beside
-//! vstimd's. It is the runtime shape: the daemon rewrites it from these types
-//! when a calibration is applied, so there is no second copy to drift.
+//! vstimd's, and the daemon only ever reads it: `/etc` is what a person and a
+//! package upgrade edit (`contracts/DAEMON_LAYOUT.md`). What the API changes
+//! goes elsewhere. A calibration is measured over the API and has to survive a
+//! restart, so it is kept in the storage directory as a [`StoredCalibration`]
+//! and laid over the file's `[[axis]]` tables at start. A patched rate lasts
+//! until the daemon restarts.
 
 use std::path::Path;
 
@@ -68,12 +72,19 @@ impl RigConfig {
         }
     }
 
-    pub fn save(&self, path: &Path) -> Result<(), String> {
-        let text = toml::to_string_pretty(self).map_err(|e| e.to_string())?;
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+    /// Lay a stored calibration over the file's, axis by axis, by name.
+    ///
+    /// Returns the stored axes the file has no axis for. Those are not added:
+    /// which axes a rig has is wiring, and wiring is the file's to say.
+    pub fn apply_stored_calibration(&mut self, stored: &StoredCalibration) -> Vec<String> {
+        let mut unmatched = Vec::new();
+        for stored_axis in &stored.axes {
+            match self.axes.iter_mut().find(|axis| axis.name == stored_axis.name) {
+                Some(axis) => *axis = stored_axis.clone(),
+                None => unmatched.push(stored_axis.name.clone()),
+            }
         }
-        std::fs::write(path, text).map_err(|e| format!("{}: {e}", path.display()))
+        unmatched
     }
 
     pub fn calibration(&self) -> Calibration {
@@ -218,4 +229,80 @@ pub struct ConfigPatch {
     pub rate_hz: Option<u32>,
     pub display_hz: Option<u32>,
     pub ring_minutes: Option<u32>,
+}
+
+/// `calibration.toml` in the storage directory: every axis's calibration as the
+/// API last left it, in the rig config's own `[[axis]]` shape.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StoredCalibration {
+    #[serde(default, rename = "axis")]
+    pub axes: Vec<AxisCalibration>,
+}
+
+impl StoredCalibration {
+    /// `None` when nothing has been stored yet, which is the normal state of a
+    /// rig that has never been calibrated over the API.
+    pub fn load(path: &Path) -> Result<Option<Self>, String> {
+        match std::fs::read_to_string(path) {
+            Ok(text) => toml::from_str(&text)
+                .map(Some)
+                .map_err(|e| format!("{}: {e}", path.display())),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(format!("{}: {e}", path.display())),
+        }
+    }
+
+    /// Written to a temporary file and renamed, so a crash mid-write leaves the
+    /// last good calibration rather than half of a new one.
+    pub fn save(&self, path: &Path) -> Result<(), String> {
+        let text = toml::to_string_pretty(self).map_err(|e| e.to_string())?;
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+        }
+        let temporary = path.with_extension("toml.tmp");
+        std::fs::write(&temporary, text).map_err(|e| format!("{}: {e}", temporary.display()))?;
+        std::fs::rename(&temporary, path).map_err(|e| format!("{}: {e}", path.display()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn axis(name: &str, counts_per_cm: f64) -> AxisCalibration {
+        AxisCalibration {
+            name: name.into(),
+            counts_per_cm,
+            counts_per_rev: None,
+            diameter_cm: None,
+            invert: false,
+            measured_at: Some("2026-09-25T10:00:00Z".into()),
+        }
+    }
+
+    #[test]
+    fn a_stored_calibration_replaces_the_files_axis_of_the_same_name() {
+        let mut config = RigConfig::default();
+        let unmatched = config.apply_stored_calibration(&StoredCalibration {
+            axes: vec![axis("wheel", 91.5), axis("ball_x", 12.0)],
+        });
+        assert_eq!(config.axes.len(), 1);
+        assert_eq!(config.axes[0].counts_per_cm, 91.5);
+        assert_eq!(unmatched, vec!["ball_x".to_string()]);
+    }
+
+    #[test]
+    fn a_stored_calibration_round_trips_through_its_file() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("calibration.toml");
+        assert!(StoredCalibration::load(&path).unwrap().is_none());
+        let stored = StoredCalibration {
+            axes: vec![axis("wheel", 87.25)],
+        };
+        stored.save(&path).unwrap();
+        let loaded = StoredCalibration::load(&path).unwrap().unwrap();
+        assert_eq!(loaded.axes[0].counts_per_cm, 87.25);
+        assert!(!path.with_extension("toml.tmp").exists());
+    }
 }

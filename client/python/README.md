@@ -3,7 +3,7 @@
 The locomotion daemon's API, as Python types.
 
 ```python
-from mousewheeld import MousewheeldClient
+from mousewheeld_client import MousewheeldClient
 
 with MousewheeldClient("rig.local") as wheel:
     wheel.open_link()
@@ -23,8 +23,8 @@ which. Every client in this family is named after the daemon it speaks to.
 
 ## No protobuf types come out of this package, and none go in
 
-The generated code lives in `mousewheeld._proto`, which is private;
-`mousewheeld.api_types` is the vocabulary and `mousewheeld._wire_conversions` is
+The generated code lives in `mousewheeld_client._proto`, which is private;
+`mousewheeld_client.api_types` is the vocabulary and `mousewheeld_client._wire_conversions` is
 the seam.
 Somebody writing a session should not have to learn a generated API to read a
 number, and this package can keep a name on the day the interface adds a field.
@@ -49,7 +49,7 @@ It buys three things you notice within a page of writing a script:
 `DaemonRefusedTheRequest` carries four things, and the one to branch on is `error`:
 
 ```python
-from mousewheeld import DaemonRefusedTheRequest
+from mousewheeld_client import DaemonRefusedTheRequest
 
 try:
     wheel.arm("goal")
@@ -68,21 +68,26 @@ change something, and a loop that retried it would hammer a rig about a typo.
 
 ## A command line, too
 
-`mousewheel` — without the `d`, because the daemon installs a binary called
-`mousewheeld` on the same rigs. Everything prints JSON, so it pipes into `jq`:
+`mousewheelctl` — without the `d`, because the daemon installs a binary called
+`mousewheeld` on the same rigs. It follows the family's rules for a `<name>ctl`
+(`contracts/DAEMON_LAYOUT.md`): `--rig`, else `$BRAEMONS_RIG`, else localhost;
+JSON on stdout, one object per line for a stream; a failure as JSON on stderr
+with a shared exit status (3 nothing answered, 5 refused, 6 not found).
 
 ```console
-$ mousewheel --rig rig.local state | jq '.axes[0].position_cm'
-$ mousewheel --rig rig.local arm goal --patch goal_cm=180 --label 'trial 42'
-$ mousewheel --rig rig.local set goal > goal.json      # the file as it is on disk
-$ mousewheel --rig rig.local check --file goal.json    # compiled, not stored
-$ mousewheel --rig rig.local watch --rate-hz 10 | jq -c '.axes[0].velocity_cm_s'
+$ export BRAEMONS_RIG=rig.local
+$ mousewheelctl state | jq '.axes[0].position_cm'
+$ mousewheelctl arm goal --patch goal_cm=180 --label 'trial 42'
+$ mousewheelctl sets get goal > goal.json       # the file as it is on disk
+$ mousewheelctl sets check --file goal.json     # compiled, not stored
+$ mousewheelctl sets put goal.json              # stored as `goal`
+$ mousewheelctl watch --rate-hz 10 | jq -c '.axes[0].velocity_cm_s'
 ```
 
 ## Development
 
 ```console
-$ make proto        # regenerate mousewheeld/_proto/ from ../../proto
+$ make proto        # regenerate mousewheeld_client/_proto/ from ../../proto
 $ make check-proto  # fail if the committed stubs are not what proto/ produces
 $ make test         # the seam with no daemon, and the client against one
 $ make typecheck    # ty

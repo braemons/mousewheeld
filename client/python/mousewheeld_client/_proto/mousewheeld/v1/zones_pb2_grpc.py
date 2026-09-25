@@ -4,8 +4,8 @@ import grpc
 import warnings
 
 from google.protobuf import struct_pb2 as google_dot_protobuf_dot_struct__pb2
-from mousewheeld.v1 import device_pb2 as mousewheeld_dot_v1_dot_device__pb2
-from mousewheeld.v1 import zones_pb2 as mousewheeld_dot_v1_dot_zones__pb2
+from mousewheeld_client._proto.mousewheeld.v1 import device_pb2 as mousewheeld_dot_v1_dot_device__pb2
+from mousewheeld_client._proto.mousewheeld.v1 import zones_pb2 as mousewheeld_dot_v1_dot_zones__pb2
 
 GRPC_GENERATED_VERSION = '1.84.0'
 GRPC_VERSION = grpc.__version__

@@ -118,9 +118,9 @@ jobs:
           NOTES=$(cat <<'EOF'
           ## Installing
 
-          **Debian / Ubuntu / Raspberry Pi OS** — `sudo apt install ./mousewheeld_*_<arch>.deb`
+          **Debian / Ubuntu / Raspberry Pi OS** — `sudo apt install ./braemons-mousewheeld_*_<arch>.deb`
 
-          **Fedora / RHEL** — `sudo dnf install ./mousewheeld-*.<arch>.rpm`
+          **Fedora / RHEL** — `sudo dnf install ./braemons-mousewheeld-*.<arch>.rpm`
 
           Say which axes the rig has in `/etc/braemons/mousewheeld-rig-config.toml`,
           then `sudo systemctl start mousewheeld`. The daemon is one binary,

@@ -2,7 +2,7 @@
 """What this client hands back, and what it takes.
 
 **No protobuf message is ever returned from this package, and none is
-accepted.** The generated types live in `mousewheeld._proto`,
+accepted.** The generated types live in `mousewheeld_client._proto`,
 `_wire_conversions.py` is
 the seam, and everything here is a frozen dataclass or an enum. That is the
 family's rule (`contracts/DAEMON_LAYOUT.md`): the interface is authored in

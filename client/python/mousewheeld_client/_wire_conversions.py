@@ -15,11 +15,12 @@ appears in this package.
 
 from __future__ import annotations
 
-from typing import TypeVar
+from collections.abc import Mapping
+from typing import Any, TypeVar
 
 from google.protobuf.message import Message
 
-from mousewheeld.v1 import calibration_pb2, config_pb2, device_pb2, state_pb2, version_pb2, zones_pb2  # ty: ignore[unresolved-import]  (resolved at runtime by __init__'s __path__)
+from mousewheeld_client._proto.mousewheeld.v1 import calibration_pb2, config_pb2, device_pb2, state_pb2, version_pb2, zones_pb2
 
 from .api_types import (
     ArmedZones,
@@ -99,7 +100,7 @@ _LEVELS = {
 _E = TypeVar("_E")
 
 
-def _decode(table: dict[int, _E], value: int, what: str) -> _E:
+def _decode(table: Mapping[Any, _E], value: Any, what: str) -> _E:
     """A wire enum, or a refusal naming what could not be read.
 
     Zero is `*_UNSPECIFIED` in every one of these, which proto3 also gives a
@@ -114,7 +115,7 @@ def _decode(table: dict[int, _E], value: int, what: str) -> _E:
         ) from None
 
 
-def _encode(table: dict[int, _E], value: _E) -> int:
+def _encode(table: Mapping[Any, _E], value: _E) -> Any:
     for wire, known in table.items():
         if known is value:
             return wire
@@ -458,7 +459,7 @@ def validation_report_from_wire(message: zones_pb2.ValidationReport) -> Validati
 # ------------------------------------------------------------------ config ---
 
 
-def config_from_wire(message: config_pb2.DaemonConfig) -> DaemonConfig:
+def config_from_wire(message: config_pb2.ConfigView) -> DaemonConfig:
     return DaemonConfig(
         rate_hz=message.rate_hz,
         display_hz=message.display_hz,

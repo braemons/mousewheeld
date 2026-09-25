@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-from mousewheeld.v1 import calibration_pb2 as mousewheeld_dot_v1_dot_calibration__pb2
+from mousewheeld_client._proto.mousewheeld.v1 import calibration_pb2 as mousewheeld_dot_v1_dot_calibration__pb2
 
 GRPC_GENERATED_VERSION = '1.84.0'
 GRPC_VERSION = grpc.__version__
@@ -95,7 +95,8 @@ class CalibrationServicer:
     def ReplaceCalibration(self, request, context):
         """Change one or more axes. Absent fields are left alone, so a panel may send
         a single number. An axis name the rig does not have is a 404, never a new
-        axis.
+        axis. Kept, like an applied measurement, in the storage directory's
+        `calibration.toml`, which wins over the rig config's values at start.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')

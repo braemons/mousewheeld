@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-from mousewheeld.v1 import config_pb2 as mousewheeld_dot_v1_dot_config__pb2
+from mousewheeld_client._proto.mousewheeld.v1 import config_pb2 as mousewheeld_dot_v1_dot_config__pb2
 
 GRPC_GENERATED_VERSION = '1.84.0'
 GRPC_VERSION = grpc.__version__
@@ -75,7 +75,8 @@ class ConfigServicer:
         raise NotImplementedError('Method not implemented!')
 
     def PatchConfig(self, request, context):
-        """Change the rates. Absent fields are left alone.
+        """Change the rates. Absent fields are left alone. A change lasts until the
+        daemon restarts: the rig config is read, never written.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')

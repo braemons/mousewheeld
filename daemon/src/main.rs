@@ -20,7 +20,7 @@ use clap::{Parser, Subcommand};
 
 use mousewheeld::daemon_state::Daemon;
 use mousewheeld::device::{Backend, Device};
-use mousewheeld::model::config::RigConfig;
+use mousewheeld::model::config::{RigConfig, StoredCalibration};
 use mousewheeld::zones::ZoneSetStore;
 use mousewheeld::{device, grpc, publish, web};
 
@@ -28,10 +28,11 @@ use mousewheeld::{device, grpc, publish, web};
 ///
 /// **8083 and not 8082, which is where this used to be.** A Python daemon
 /// cannot serve gRPC and a browser on one socket -- `grpc.aio` owns its port
-/// outright and no ASGI server speaks native gRPC -- so statemachined and
-/// triald each bind *two*: the panels on their port and gRPC on one above it.
-/// statemachined's pair is 8081 and 8082, and a rig running both daemons on
-/// their defaults had a collision.
+/// outright and no ASGI server speaks native gRPC -- so it binds *two*: the
+/// panels on its port and gRPC on one above it. statemachined was Python and
+/// held 8081 and 8082, and a rig running both daemons on their defaults had a
+/// collision. statemachined is Rust now and 8082 is free; triald still holds
+/// 8420 and 8421.
 ///
 /// This daemon is the one that moved because it is the one that needs a single
 /// port: tonic-web serves the panels and the rpcs on the same socket, which is
@@ -39,7 +40,8 @@ use mousewheeld::{device, grpc, publish, web};
 /// the family's allocation and the rule that produced it.
 const DEFAULT_PORT: u16 = 8083;
 const DEFAULT_RIG_CONFIG: &str = "/etc/braemons/mousewheeld-rig-config.toml";
-const DEFAULT_STORAGE_DIR: &str = "/var/lib/mousewheeld";
+/// Under the family's one parent, so a rig has one directory to back up.
+const DEFAULT_STORAGE_DIR: &str = "/var/lib/braemons/mousewheeld";
 
 #[derive(Parser)]
 #[command(name = "mousewheeld", version, about, long_about = None)]
@@ -71,6 +73,10 @@ enum Command {
         /// exercises is the daemon rather than a story about one.
         #[arg(long)]
         simulate: bool,
+        /// Do not advertise `_mousewheeld._tcp`. The API is served either way;
+        /// a console then needs this rig's address by hand.
+        #[arg(long)]
+        no_mdns: bool,
     },
     /// Print the JSON Schema of a zone-set file.
     ///
@@ -97,10 +103,14 @@ fn main() {
             rig_config,
             storage_dir,
             simulate,
-        } => serve(port, bind, rig_config, storage_dir, simulate),
+            no_mdns,
+        } => serve(port, bind, rig_config, storage_dir, simulate, no_mdns),
         Command::Schema => {
             let schema = mousewheeld::file_schema::zone_set_schema();
-            println!("{}", serde_json::to_string_pretty(&schema).expect("a schema"));
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&schema).expect("a schema")
+            );
         }
         Command::Relay { from } => {
             // Named here rather than hidden, because the subcommand is part of
@@ -115,14 +125,40 @@ fn main() {
     }
 }
 
-fn serve(port: u16, bind: String, rig_config: PathBuf, storage_dir: PathBuf, simulate: bool) {
-    let config = match RigConfig::load(&rig_config) {
+fn serve(
+    port: u16,
+    bind: String,
+    rig_config: PathBuf,
+    storage_dir: PathBuf,
+    simulate: bool,
+    no_mdns: bool,
+) {
+    let mut config = match RigConfig::load(&rig_config) {
         Ok(config) => config,
         Err(problem) => {
             eprintln!("mousewheeld: {problem}");
             std::process::exit(1);
         }
     };
+    // The calibration the API last measured, over the file's. The rig config is
+    // read only; this file in the storage directory is what the API writes.
+    let calibration_path = storage_dir.join("calibration.toml");
+    match StoredCalibration::load(&calibration_path) {
+        Ok(Some(stored)) => {
+            for name in config.apply_stored_calibration(&stored) {
+                log::warn!(
+                    "{} calibrates an axis named {name}, and the rig config has none: ignored",
+                    calibration_path.display()
+                );
+            }
+            log::info!("calibration from {}", calibration_path.display());
+        }
+        Ok(None) => {}
+        Err(problem) => {
+            eprintln!("mousewheeld: {problem}");
+            std::process::exit(1);
+        }
+    }
     if !rig_config.exists() {
         log::warn!(
             "no rig config at {} — running on defaults. A rig's wiring and calibration live there",
@@ -164,7 +200,10 @@ fn serve(port: u16, bind: String, rig_config: PathBuf, storage_dir: PathBuf, sim
     let backend = match (simulate, config.device.port.as_str()) {
         (true, _) => Backend::Simulated,
         (false, "") => Backend::Absent,
-        (false, port) => Backend::Port { path: port.to_string(), baud: config.device.baud },
+        (false, port) => Backend::Port {
+            path: port.to_string(),
+            baud: config.device.baud,
+        },
     };
     let stream_rate_hz = config.stream.rate_hz;
     let lines = config
@@ -176,12 +215,16 @@ fn serve(port: u16, bind: String, rig_config: PathBuf, storage_dir: PathBuf, sim
     // first sample that arrives already has somewhere to go.
     let publisher = publish::SegmentPublisher::create(
         &config.publish.shm_name,
-        &config.axes.iter().map(|axis| axis.name.clone()).collect::<Vec<_>>(),
+        &config
+            .axes
+            .iter()
+            .map(|axis| axis.name.clone())
+            .collect::<Vec<_>>(),
     );
     let device = Device::new(backend, axes, lines, stream_rate_hz, publisher);
 
     let daemon = Arc::new(Daemon {
-        config_path: rig_config,
+        calibration_path,
         config: Mutex::new(config),
         store,
         device,
@@ -248,23 +291,49 @@ fn serve(port: u16, bind: String, rig_config: PathBuf, storage_dir: PathBuf, sim
             .expect("the descriptor set this binary was built from");
         routes.add_service(reflection).add_service(reflection_alpha);
 
+        // **CORS is open, and `/elements/` is why.** A console served from
+        // somewhere else imports these panels by URL and calls this daemon
+        // from its own origin. `permissive` rather than `very_permissive`: the
+        // latter allows credentials, which cannot be combined with a wildcard
+        // `expose-headers`, and exposing `grpc-status` and `grpc-message` is
+        // how a refusal reaches a panel across an origin. It went missing with
+        // the REST layer once, and a console could not load a single panel.
+        let cors = tower_http::cors::CorsLayer::permissive();
+
         // gRPC-Web on the whole stack rather than per service: the layer only
         // acts on requests that arrive with a gRPC-Web content type, so the
         // panels pass through it untouched.
-        let app = web::router(daemon).merge(
-            routes
-                .routes()
-                .into_axum_router()
-                .layer(tonic_web::GrpcWebLayer::new()),
-        );
+        let app = web::router(daemon)
+            .merge(
+                routes
+                    .routes()
+                    .into_axum_router()
+                    .layer(tonic_web::GrpcWebLayer::new()),
+            )
+            .layer(cors);
 
-        if let Err(problem) = axum::serve(listener, app)
+        // Advertised once the port is bound, so a console that finds the
+        // record finds a daemon; withdrawn when it stops.
+        let mut advertisement = (!no_mdns).then(|| {
+            let mut advertisement =
+                mousewheeld::mdns_service_advertisement::MdnsServiceAdvertisement::new(
+                    port,
+                    env!("CARGO_PKG_VERSION"),
+                );
+            advertisement.start();
+            advertisement
+        });
+
+        let served = axum::serve(listener, app)
             .with_graceful_shutdown(async {
                 let _ = tokio::signal::ctrl_c().await;
                 log::info!("mousewheeld: stopping");
             })
-            .await
-        {
+            .await;
+        if let Some(advertisement) = advertisement.as_mut() {
+            advertisement.stop();
+        }
+        if let Err(problem) = served {
             eprintln!("mousewheeld: {problem}");
             std::process::exit(1);
         }

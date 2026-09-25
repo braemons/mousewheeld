@@ -2,7 +2,7 @@
 """`MousewheeldClient` — one handle on one mousewheeld.
 
 Methods are named for what they ask for, not for their rpcs, and they take and
-return the types in `mousewheeld.api_types`. The five services are an arrangement
+return the types in `mousewheeld_client.api_types`. The five services are an arrangement
 of the interface, not of a caller's day: somebody writing a session wants
 `rig.arm(...)` and `rig.state()`, not to know that one lives on `Zones` and the
 other on `StateService`.
@@ -15,7 +15,7 @@ from types import TracebackType
 
 import grpc
 
-from mousewheeld.v1 import (  # ty: ignore[unresolved-import]  (resolved at runtime by __init__'s __path__)
+from mousewheeld_client._proto.mousewheeld.v1 import (
     calibration_pb2,
     calibration_pb2_grpc,
     config_pb2,

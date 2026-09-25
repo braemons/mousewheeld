@@ -31,7 +31,10 @@ fn read_calibration_body(daemon: &Arc<Daemon>) -> wire::CalibrationState {
 }
 
 /// Change a calibration by hand. Every field optional; the rest is left alone.
-fn replace_calibration_body(daemon: &Arc<Daemon>, patch: wire::CalibrationPatch) -> ApiResult<wire::CalibrationState> {
+fn replace_calibration_body(
+    daemon: &Arc<Daemon>,
+    patch: wire::CalibrationPatch,
+) -> ApiResult<wire::CalibrationState> {
     let patch = calibration_patch_from_wire(patch);
     {
         let mut config = daemon.config.lock().unwrap();
@@ -68,15 +71,17 @@ fn replace_calibration_body(daemon: &Arc<Daemon>, patch: wire::CalibrationPatch)
                 daemon
                     .device
                     .set_invert(&change.name, value)
-                    .map_err(|problem| ApiError::refused("armed", problem).about(change.name.clone()))?;
+                    .map_err(|problem| {
+                        ApiError::refused("armed", problem).about(change.name.clone())
+                    })?;
                 axis.invert = value;
             }
         }
     }
     apply_to_running_axes(daemon);
     daemon
-        .save_config()
-        .map_err(|problem| ApiError::internal("config_unwritable", problem))?;
+        .save_calibration()
+        .map_err(|problem| ApiError::internal("calibration_unwritable", problem))?;
     Ok(calibration_to_wire(daemon.calibration()))
 }
 
@@ -98,7 +103,10 @@ fn ball_is_not_here() -> ApiError {
 }
 
 /// Note the counter and start counting.
-fn start_measurement_body(daemon: &Arc<Daemon>, request: wire::StartMeasurement) -> ApiResult<wire::MeasurementStarted> {
+fn start_measurement_body(
+    daemon: &Arc<Daemon>,
+    request: wire::StartMeasurement,
+) -> ApiResult<wire::MeasurementStarted> {
     let request = start_measurement_from_wire(request);
     if request.known_distance_cm <= 0.0 {
         return Err(ApiError::refused(
@@ -106,14 +114,17 @@ fn start_measurement_body(daemon: &Arc<Daemon>, request: wire::StartMeasurement)
             "name the distance you are about to roll, in centimetres",
         ));
     }
-    let counts = daemon
-        .device
-        .counts_of(&request.axis)
-        .ok_or_else(|| match daemon.device.connected() {
-            true => ApiError::not_found("no_such_axis", format!("no axis named {}", request.axis))
-                .about(request.axis.clone()),
-            false => ApiError::no_device(),
-        })?;
+    let counts =
+        daemon
+            .device
+            .counts_of(&request.axis)
+            .ok_or_else(|| match daemon.device.connected() {
+                true => {
+                    ApiError::not_found("no_such_axis", format!("no axis named {}", request.axis))
+                        .about(request.axis.clone())
+                }
+                false => ApiError::no_device(),
+            })?;
     *daemon.measuring.lock().unwrap() = Some(MeasurementInProgress {
         axis: request.axis.clone(),
         known_distance_cm: request.known_distance_cm,
@@ -192,12 +203,12 @@ fn finish_measurement_body(daemon: &Arc<Daemon>) -> ApiResult<wire::MeasurementR
 
 /// Make the measurement the rig's truth.
 fn apply_measurement_body(daemon: &Arc<Daemon>) -> ApiResult<wire::MeasurementApplied> {
-    let result = daemon
-        .measured
-        .lock()
-        .unwrap()
-        .take()
-        .ok_or_else(|| ApiError::conflict("nothing_measured", "finish a measurement before applying one"))?;
+    let result = daemon.measured.lock().unwrap().take().ok_or_else(|| {
+        ApiError::conflict(
+            "nothing_measured",
+            "finish a measurement before applying one",
+        )
+    })?;
 
     {
         let mut config = daemon.config.lock().unwrap();
@@ -213,8 +224,8 @@ fn apply_measurement_body(daemon: &Arc<Daemon>) -> ApiResult<wire::MeasurementAp
     }
     apply_to_running_axes(daemon);
     daemon
-        .save_config()
-        .map_err(|problem| ApiError::internal("config_unwritable", problem))?;
+        .save_calibration()
+        .map_err(|problem| ApiError::internal("calibration_unwritable", problem))?;
 
     // Every compiled set was compiled against the old number. Disarming is the
     // honest response: a set armed under one calibration is never silently

@@ -3,7 +3,7 @@
 
 UV ?= uv
 PROTO_ROOT := ../../proto
-PROTO_OUT  := mousewheeld/_proto
+PROTO_OUT  := mousewheeld_client/_proto
 PROTOS     := $(wildcard $(PROTO_ROOT)/mousewheeld/v1/*.proto)
 
 .PHONY: help proto generate-into check-proto test test-unit typecheck check build clean
@@ -14,7 +14,7 @@ help:
 # The generated code is committed (contracts/DAEMON_LAYOUT.md), so an install
 # needs no protoc and grpcio-tools is a dev dependency rather than a runtime
 # one. A reviewer sees an interface change as a diff.
-proto: ## Regenerate mousewheeld/_proto/ from ../../proto
+proto: ## Regenerate mousewheeld_client/_proto/ from ../../proto
 	@$(MAKE) --no-print-directory generate-into OUT=$(PROTO_OUT)
 	@echo "$(PROTO_OUT)/"
 
@@ -24,6 +24,10 @@ generate-into:
 	  --proto_path=$(PROTO_ROOT) \
 	  --python_out=$(OUT) --pyi_out=$(OUT) --grpc_python_out=$(OUT) \
 	  $(PROTOS)
+	@# protoc roots the stubs' imports at the proto path (`from mousewheeld.v1
+	@# import ...`); every braemons client rewrites them into its own package.
+	@find $(OUT) -name '*.py' -o -name '*.pyi' | xargs sed -i \
+	  -e 's/^from mousewheeld\.v1 import /from mousewheeld_client._proto.mousewheeld.v1 import /'
 
 # Against a fresh generation rather than against git: a *new* generated file is
 # untracked, and `git diff` says nothing at all about an untracked file. A
@@ -50,7 +54,7 @@ test-unit: ## Only the seam — no daemon, no network
 	@$(UV) run --group dev pytest -q tests/test_convert_seam.py
 
 typecheck: ## ty
-	@$(UV) run --group dev ty check mousewheeld tests
+	@$(UV) run --group dev ty check mousewheeld_client tests
 
 check: check-proto typecheck test ## The proto, the types, and both suites
 

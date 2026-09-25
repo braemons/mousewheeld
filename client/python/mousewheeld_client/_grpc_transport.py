@@ -13,7 +13,7 @@ from typing import TypeVar
 
 import grpc
 
-from mousewheeld.v1 import error_pb2  # ty: ignore[unresolved-import]  (resolved at runtime by __init__'s __path__)
+from mousewheeld_client._proto.mousewheeld.v1 import error_pb2
 
 from .daemon_refusals import DaemonOrBoardIsUnavailable, DaemonRefusedTheRequest
 

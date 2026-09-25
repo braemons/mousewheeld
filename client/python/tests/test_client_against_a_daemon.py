@@ -12,7 +12,7 @@ import time
 
 import pytest
 
-from mousewheeld import (
+from mousewheeld_client import (
     ArmOrigin,
     DaemonOrBoardIsUnavailable,
     DaemonRefusedTheRequest,
@@ -84,7 +84,7 @@ def test_a_stored_set_reads_back_as_types(wheel):
 
 def test_the_same_set_reads_back_as_the_file_it_is(wheel):
     """Two spellings, both real. The file is the one a person edits, and it has
-    to come back as the text on disk — `mousewheel set goal > goal.json` has to
+    to come back as the text on disk — `mousewheelctl sets get goal > goal.json` has to
     produce a file the daemon would accept."""
     file = wheel.zone_set_file("goal")
     assert file.name == "goal"

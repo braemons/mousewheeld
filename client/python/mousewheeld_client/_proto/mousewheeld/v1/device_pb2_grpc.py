@@ -3,8 +3,8 @@
 import grpc
 import warnings
 
-from mousewheeld.v1 import device_pb2 as mousewheeld_dot_v1_dot_device__pb2
-from mousewheeld.v1 import version_pb2 as mousewheeld_dot_v1_dot_version__pb2
+from mousewheeld_client._proto.mousewheeld.v1 import device_pb2 as mousewheeld_dot_v1_dot_device__pb2
+from mousewheeld_client._proto.mousewheeld.v1 import version_pb2 as mousewheeld_dot_v1_dot_version__pb2
 
 GRPC_GENERATED_VERSION = '1.84.0'
 GRPC_VERSION = grpc.__version__

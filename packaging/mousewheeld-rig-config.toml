@@ -4,11 +4,10 @@
 # /etc/braemons/mousewheeld-rig-config.toml, beside vstimd's own rig config, and
 # marked as a config file by the package: an upgrade never overwrites it.
 #
-# **The daemon rewrites this file** when a calibration is applied, because the
-# calibration belongs to the rig and there is one copy of it. Comments are not
-# preserved through that rewrite — which is the usual cost of a file that is
-# both edited by people and written by a program, and it is worth it here
-# because the alternative is two copies of a hardware fact.
+# **The daemon only reads this file.** A calibration measured over the API is
+# kept in /var/lib/braemons/mousewheeld/calibration.toml and replaces the
+# [[axis]] of the same name below when the daemon starts. The values here are
+# the rig's starting point; delete that file to fall back to them.
 
 # ── The board ────────────────────────────────────────────────────────────────
 [device]

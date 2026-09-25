@@ -15,7 +15,8 @@ service Config {
   // answer.
   rpc ReadConfig(ReadConfigRequest) returns (ConfigView);
 
-  // Change the rates. Absent fields are left alone.
+  // Change the rates. Absent fields are left alone. A change lasts until the
+  // daemon restarts: the rig config is read, never written.
   rpc PatchConfig(ConfigPatch) returns (ConfigView);
 
   // The output lines, by name.

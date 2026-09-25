@@ -56,9 +56,8 @@ impl Config for super::DaemonServices {
                 );
             }
         }
-        self.daemon
-            .save_config()
-            .map_err(|problem| Status::internal(format!("the rig config is unwritable: {problem}")))?;
+        // Not saved: a rate is a session's setting and lasts until the daemon
+        // restarts. The rig config in /etc is read, never written.
         Ok(Response::new(config_view_to_wire(self.view())))
     }
 

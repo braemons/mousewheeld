@@ -20,9 +20,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
 clap = { version = "4", features = ["derive"] }
-# The OpenAPI document is derived from the same types the API and the files
-# use, so the clients are checked against the daemon rather than against a
-# description of it.
+# The zone-set file's JSON Schema (`mousewheeld schema`) is derived from the
+# same types the files use, so the committed schema cannot describe another
+# shape.
 utoipa = { version = "5", features = ["axum_extras"] }
 rust-embed = "8"
 # The generated wire types and their JSON mapping. Runtime only: the generators
@@ -44,6 +44,9 @@ thiserror = "2"
 rand = "0.8"
 # The serial port and the pty behind the board simulator: termios, posix_openpt.
 libc = "0.2"
+# `_mousewheeld._tcp`, the same responder and hashing statemachined uses.
+mdns-sd = "0.21.4"
+sha2 = "0.11.0"
 
 # **The one dependency on another braemons repository, and the one exception to
 # "no shared code".** It is barely one: the segment layout is a contract between

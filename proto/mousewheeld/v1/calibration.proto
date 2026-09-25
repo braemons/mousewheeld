@@ -15,7 +15,8 @@ service Calibration {
 
   // Change one or more axes. Absent fields are left alone, so a panel may send
   // a single number. An axis name the rig does not have is a 404, never a new
-  // axis.
+  // axis. Kept, like an applied measurement, in the storage directory's
+  // `calibration.toml`, which wins over the rig config's values at start.
   rpc ReplaceCalibration(CalibrationPatch) returns (CalibrationState);
 
   // The 2-D ball. Answers 501 until the hardware exists — declared so that

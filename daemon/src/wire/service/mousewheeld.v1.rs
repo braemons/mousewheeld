@@ -21,7 +21,8 @@ pub mod calibration_server {
         >;
         /// Change one or more axes. Absent fields are left alone, so a panel may send
         /// a single number. An axis name the rig does not have is a 404, never a new
-        /// axis.
+        /// axis. Kept, like an applied measurement, in the storage directory's
+        /// `calibration.toml`, which wins over the rig config's values at start.
         async fn replace_calibration(
             &self,
             request: tonic::Request<crate::wire::CalibrationPatch>,
@@ -540,7 +541,8 @@ pub mod config_server {
             tonic::Response<crate::wire::ConfigView>,
             tonic::Status,
         >;
-        /// Change the rates. Absent fields are left alone.
+        /// Change the rates. Absent fields are left alone. A change lasts until the
+        /// daemon restarts: the rig config is read, never written.
         async fn patch_config(
             &self,
             request: tonic::Request<crate::wire::ConfigPatch>,

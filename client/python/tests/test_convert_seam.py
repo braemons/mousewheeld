@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import pytest
 
-from mousewheeld import _wire_conversions as convert
-from mousewheeld.api_types import (
+from mousewheeld_client import _wire_conversions as convert
+from mousewheeld_client.api_types import (
     ArmOrigin,
     AxisCalibrationPatch,
     FireRule,
@@ -25,7 +25,7 @@ from mousewheeld.api_types import (
     ZoneSet,
     ZoneShape,
 )
-from mousewheeld.v1 import calibration_pb2, state_pb2, zones_pb2  # ty: ignore[unresolved-import]  (resolved at runtime by __init__'s __path__)
+from mousewheeld_client._proto.mousewheeld.v1 import calibration_pb2, state_pb2, zones_pb2
 
 
 def a_zone_set() -> ZoneSet:
@@ -92,7 +92,7 @@ def test_an_enum_this_build_does_not_know_is_refused_rather_than_defaulted():
     nothing about it looks wrong.
     """
     wire = convert.zone_set_to_wire(a_zone_set())
-    wire.zones[0].metric = 99
+    wire.zones[0].metric = 99  # ty: ignore[invalid-assignment]  (the point: a value no enum has)
     with pytest.raises(ValueError, match="does not know a zone metric 99"):
         convert.zone_set_from_wire(wire)
 
@@ -101,7 +101,7 @@ def test_an_unset_enum_is_refused_too():
     """Zero is `*_UNSPECIFIED`, which is also what proto3 gives a field nobody
     set. A daemon that forgot to set one is a bug here, not a default."""
     wire = convert.zone_set_to_wire(a_zone_set())
-    wire.zones[0].fire = 0
+    wire.zones[0].fire = 0  # ty: ignore[invalid-assignment]  (the point: unspecified)
     with pytest.raises(ValueError, match="a fire rule 0"):
         convert.zone_set_from_wire(wire)
 

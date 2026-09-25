@@ -12,11 +12,11 @@ and needs the path *once per trial*, exactly. And one job neither can do:
 scan that sees the count, and put on a TTL line.
 
 ```
-   console ──▶│   mousewheeld    │──▶ ZMQ PUB   samples · zone hits  (anyone, any host)
+   console ──▶│   mousewheeld    │──▶ gRPC streams · (ZMQ PUB, protobuf: not built)
    /elements  │ control │ data   │──▶ recording (the path of record)
               └──┬───────────┬───┘
-   USB · NDJSON  │           │  vinput shm  /vstimd_wheel  ──▶ vstimd, every frame
-   · CRC         │           ▼
+   USB · COBS    │           │  vinput shm  /vstimd_wheel  ──▶ vstimd, every frame
+   protobuf·CRC  │           ▼
               ┌──┴─────────┐
               │ firmware   │── TTL ──▶ statemachined · daqd
               │ counts · zones · analog out
@@ -47,11 +47,13 @@ scan that sees the count, and put on a TTL line.
 | **Packaging** | `packaging/` — nfpm, a systemd unit, a udev rule, sysusers |
 | **The API** | [`docs/reference/api.md`](docs/reference/api.md), written by hand — what an rpc is for and what a refusal means. The interface itself is [`proto/mousewheeld/v1/`](proto/mousewheeld/v1/), so this document never repeats a field list |
 | **The zone set's schema** | [`docs/reference/zone-set.schema.json`](docs/reference/zone-set.schema.json) — JSON Schema 2020-12, extracted from those types and committed, because a zone set is a *file*: point a `"$schema"` line at it and an editor checks it as you type. `make check` fails when it drifts |
+| **The firmware** | `firmware/` — the portable core, the ESP32 HAL and a native build, on the link above through nanopb; `make test-firmware` runs the core's tests on the host |
 | a board on a pty | `--simulate` — a simulator speaking the protocol on the far end of a real pty, so the daemon runs the link code it will run against a Teensy |
 
-**Not built:** the firmware, the real-time thread's scheduling discipline, the
-ZMQ publisher, the recording, marks and paths, the Python client. Everything that needs a board is M1; everything else is reachable
-without one.
+**Not built:** the Teensy HAL (the ESP32 one is in `firmware/`), the real-time
+thread's scheduling discipline, the ZMQ publisher, the recording, marks and
+paths, and mDNS. Everything that needs a board is M1; everything else is
+reachable without one.
 
 ## Running it
 
@@ -83,6 +85,10 @@ wheel that far by hand in one continuous motion, and read the measurement
 against the configured value. A whole-number ratio between them is a decoder
 counting ×1 or ×2 where the counts-per-revolution assumed ×4; the daemon says so
 before you apply it.
+
+An applied calibration is kept in `/var/lib/braemons/mousewheeld/calibration.toml`
+and wins over the rig config's `[[axis]]` values at every start; the rig config in
+`/etc` is only ever read. Delete that file to go back to the rig config's values.
 
 The calibration lives here and nowhere else. Everything this daemon publishes is
 in **centimetres**, so vstimd's `[[input.device.axis]]` keeps `scale = 1.0` and
