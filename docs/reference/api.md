@@ -133,6 +133,7 @@ not been told about the metadata: `grpcurl`, a log line, a failed test.
 | `ReadState` | per axis: counts, `position_cm`, `distance_cm`, and **both** velocities — the host's, from the sample path, and the device's, from counts over a window in its scan. They answer different questions and are never averaged together. Plus `seq_gaps`, `ring_drops`, the measured rate, and whether the link has gone quiet |
 | `WatchState` | the decimated stream. Each frame carries `lost_before`: samples the daemon **never received**, accumulated across the ones decimation dropped. A consumer breaks its line on that and on nothing else — `seq` skips here by design |
 | `ZeroPosition` | moves the **API origin**, on the board and on the host's mirror of it. Never the accumulator a camera differences: a value that jumps backwards jumps the corridor backwards. Teleporting a corridor is a command to vstimd, from whoever runs the experiment |
+| `SetPosition` | moves the API origin so that the axes read `position_cm` — for syncing the wheel to a corridor vstimd has just reset. The board has no absolute positioning; the daemon computes the origin offset and sends that |
 
 ### `Zones`
 
