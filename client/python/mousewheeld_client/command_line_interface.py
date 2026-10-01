@@ -27,7 +27,7 @@ from enum import Enum, IntEnum
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
-from .api_types import ArmOrigin, Sample, ZoneHit
+from .api_types import ArmOrigin, AxisCalibrationPatch, BallCalibration, Sample, ZoneHit
 from .daemon_client import DEFAULT_PORT, MousewheeldClient
 from .daemon_refusals import DaemonRefusedTheRequest
 
@@ -121,14 +121,50 @@ def build_parser() -> argparse.ArgumentParser:
 
     commands.add_parser("version", help="the daemon, the API, the device protocol")
     commands.add_parser("device", help="board, firmware, capacities, link")
+    commands.add_parser("firmware", help="what the board is running, and what it should be")
     commands.add_parser("connect", help="open the link to the board")
-    commands.add_parser("rig-config", help="rates, the shared-memory segment, the port")
+    rig_config = commands.add_parser(
+        "rig-config", help="rates, the shared-memory segment, the port"
+    )
+    rig_config_actions = rig_config.add_subparsers(dest="action")
+    rig_config_set = rig_config_actions.add_parser(
+        "set", help="change a rate until the daemon restarts; /etc is never written"
+    )
+    rig_config_set.add_argument("--rate-hz", type=int)
+    rig_config_set.add_argument("--display-hz", type=int)
+    rig_config_set.add_argument("--ring-minutes", type=int)
     commands.add_parser("lines", help="the output line map")
-    commands.add_parser("calibration", help="counts per centimetre, per axis")
+
+    calibration = commands.add_parser("calibration", help="counts per centimetre, per axis")
+    calibration_actions = calibration.add_subparsers(dest="action")
+    calibration_set = calibration_actions.add_parser(
+        "set", help="change what is named on one axis, and leave the rest alone"
+    )
+    calibration_set.add_argument("axis")
+    calibration_set.add_argument("--counts-per-cm", type=float)
+    calibration_set.add_argument("--counts-per-rev", type=int)
+    calibration_set.add_argument("--diameter-cm", type=float)
+    calibration_set.add_argument("--invert", action=argparse.BooleanOptionalAction)
+    ball = commands.add_parser("ball", help="the 2-D ball's calibration")
+    ball_actions = ball.add_subparsers(dest="action")
+    ball_set = ball_actions.add_parser("set", help="replace it")
+    ball_set.add_argument("--diameter-cm", type=float, required=True)
+    ball_set.add_argument(
+        "--sensor-angles-deg", type=float, nargs="+", required=True, metavar="DEGREES"
+    )
+
     commands.add_parser("wire", help="follow the serial conversation, both directions")
+    commands.add_parser("wire-log", help="the serial conversation's recent past, then exit")
 
     zero = commands.add_parser("zero", help="move the API origin")
     zero.add_argument("axes", nargs="*", help="which axes; all of them if none named")
+    position = commands.add_parser(
+        "position", help="move the API origin so that the wheel reads these centimetres"
+    )
+    position.add_argument("position_cm", type=float, nargs="+", metavar="CM")
+    position.add_argument(
+        "--axes", nargs="+", default=[], metavar="AXIS", help="which axes; all if none named"
+    )
 
     sets = commands.add_parser("sets", help="the zone-set store")
     set_actions = sets.add_subparsers(dest="action", required=True)
@@ -211,19 +247,57 @@ def _run(rig: MousewheeldClient, arguments) -> int:
             _print(rig.version())
         case "device":
             _print(rig.device())
+        case "firmware":
+            _print(rig.firmware())
         case "connect":
             _print(rig.open_link())
+        case "rig-config" if arguments.action == "set":
+            _print(
+                rig.set_config(
+                    rate_hz=arguments.rate_hz,
+                    display_hz=arguments.display_hz,
+                    ring_minutes=arguments.ring_minutes,
+                )
+            )
         case "rig-config":
             _print(rig.config())
         case "lines":
             _print(rig.lines())
+        case "calibration" if arguments.action == "set":
+            _print(
+                rig.set_calibration(
+                    AxisCalibrationPatch(
+                        name=arguments.axis,
+                        counts_per_cm=arguments.counts_per_cm,
+                        counts_per_rev=arguments.counts_per_rev,
+                        diameter_cm=arguments.diameter_cm,
+                        invert=arguments.invert,
+                    )
+                )
+            )
         case "calibration":
             _print(rig.calibration())
+        case "ball" if arguments.action == "set":
+            _print(
+                rig.set_ball(
+                    BallCalibration(
+                        diameter_cm=arguments.diameter_cm,
+                        sensor_angles_deg=tuple(arguments.sensor_angles_deg),
+                    )
+                )
+            )
+        case "ball":
+            _print(rig.ball())
         case "wire":
             for line in rig.watch_wire():
                 _print_line(line)
+        case "wire-log":
+            for line in rig.wire_log():
+                _print_line(line)
         case "zero":
             _print(rig.zero_position(tuple(arguments.axes)))
+        case "position":
+            _print(rig.set_position(tuple(arguments.position_cm), tuple(arguments.axes)))
         case "sets":
             return _sets(rig, arguments)
         case "arm":

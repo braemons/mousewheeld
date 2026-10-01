@@ -1,0 +1,80 @@
+name: CI
+
+# Every push to main and every pull request: the daemon, the firmware core
+# under the sanitizers, the ESP32 image, the committed generated code against
+# proto/, and the Python client against a simulated daemon. The release
+# workflow builds the artifacts; this one says whether the tree deserves them.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  daemon:
+    name: daemon and firmware core
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      # `vinput` comes from vstimd's repository, and cargo checks out a git
+      # dependency's submodules too -- two of which vstimd names by SSH URL.
+      # They are public; a runner has no key, so fetch them over HTTPS.
+      - name: Fetch git dependencies over HTTPS
+        run: |
+          git config --global url."https://github.com/".insteadOf git@github.com:
+          echo CARGO_NET_GIT_FETCH_WITH_CLI=true >> "$GITHUB_ENV"
+      - name: protoc and cmake
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler cmake
+      - uses: Swatinem/rust-cache@v2
+      # Everything `make check` does: build, clippy, the tests, the committed
+      # Rust code and zone-set schema against their sources, the API reference
+      # against proto/, and the NUL-byte check.
+      - name: make check
+        run: make check
+      - name: The firmware core under ASan and UBSan
+        run: make test-firmware
+
+  web:
+    name: browser client
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - name: The committed bundle is what proto/ produces
+        run: mkdir -p target && make check-web
+
+  client:
+    name: python client
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Fetch git dependencies over HTTPS
+        run: |
+          git config --global url."https://github.com/".insteadOf git@github.com:
+          echo CARGO_NET_GIT_FETCH_WITH_CLI=true >> "$GITHUB_ENV"
+      - uses: astral-sh/setup-uv@v5
+      - uses: Swatinem/rust-cache@v2
+      # Its stubs against proto/, ty, the seam, and the client and mousewheelctl
+      # against a simulated daemon over real gRPC.
+      - name: make client
+        run: make client
+
+  firmware:
+    name: firmware esp32
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: platformio-esp32-${{ hashFiles('firmware/platformio.ini') }}
+      - name: Build
+        run: make firmware

@@ -10,7 +10,7 @@ ARCH ?= amd64
 # The same version as PEP 440 spells it, for the client's wheel: 0.3.0-alpha1 is 0.3.0a1.
 PY_VERSION ?= $(shell echo '$(VERSION)' | sed -e 's/-alpha/a/' -e 's/-beta/b/' -e 's/-rc/rc/')
 
-.PHONY: build test check proto check-proto web check-web client check-schema check-text run dev schema package wheel print-version clean help firmware-proto test-firmware firmware
+.PHONY: build test check docs proto check-proto web check-web client check-schema check-text run dev schema package wheel print-version clean help firmware-proto test-firmware firmware
 
 help:
 	@sed -n 's/^\([a-z-]*\):.*## \(.*\)/  \1|\2/p' $(MAKEFILE_LIST) | column -t -s '|'
@@ -21,15 +21,25 @@ build: ## Release binary, with the console panels embedded in it
 test: ## The zone compiler's tests
 	$(CARGO) test --release
 
-check: ## Build, clippy, tests, the proto, the committed schema, and that source is text
+check: ## Build, clippy, tests, the proto, the API reference, the committed schema, and that source is text
 	$(CARGO) build --release
 	$(CARGO) clippy --release --all-targets -- -D warnings
 	$(CARGO) test --release
 	@$(MAKE) --no-print-directory check-proto
 	@$(MAKE) --no-print-directory check-schema
 	@$(MAKE) --no-print-directory check-text
+	@$(MAKE) --no-print-directory docs
 	@# Not check-web: it needs npm and a network on first run, and this target
 	@# has to work on a rig. CI runs `make check-web` as its own step.
+
+docs: ## The API reference, docs/reference/api.md, names every rpc in proto/
+	@missing=$$(grep -hoE '^[[:space:]]*rpc [A-Za-z]+' proto/mousewheeld/v1/*.proto | awk '{print $$2}' \
+	  | while read rpc; do grep -qw "$$rpc" docs/reference/api.md || echo "$$rpc"; done); \
+	if [ -n "$$missing" ]; then \
+	  echo "docs/reference/api.md does not mention:" $$missing; \
+	  echo "the document a person reads is behind the interface; say what each one does."; \
+	  exit 1; \
+	fi
 
 # The generated code is committed, so `cargo build` needs no protoc and a
 # reviewer sees an interface change as a diff. tools/protogen is outside the
@@ -86,7 +96,7 @@ check-web: ## Fail if the committed browser client is not what proto/ produces
 # of `check` for the same reason `check-web` is not: it needs uv, and a network
 # the first time. Its own `check` regenerates its stubs from proto/, typechecks,
 # and runs both suites — the second of which starts a simulated daemon.
-client: ## The Python client's checks: its stubs, ty, and both test suites
+client: build ## The Python client's checks: its stubs, ty, and both suites, against the built daemon
 	@$(MAKE) --no-print-directory -C client/python check
 
 # A NUL byte in a source file makes git call it binary, and a binary file has no
