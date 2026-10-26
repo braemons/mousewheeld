@@ -119,6 +119,7 @@ message ZonesBegin {
 enum Metric {
     METRIC_DISPLACEMENT = 0;   // counts − origin, signed
     METRIC_DISTANCE = 1;       // Σ|Δcounts| since the origin was set
+    METRIC_VELOCITY = 2;       // counts/s over the device's velocity window, signed
 }
 
 enum Fire {

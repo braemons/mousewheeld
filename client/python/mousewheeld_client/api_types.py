@@ -39,10 +39,13 @@ class ZoneMetric(Enum):
 
     `DISPLACEMENT` is signed position from the origin — where the animal *is*.
     `DISTANCE` is path length, which only grows: how far it has run.
+    `VELOCITY` is the board's signed velocity over its 20 ms window — how fast
+    it is running — and a velocity zone's bounds are cm/s.
     """
 
     DISPLACEMENT = "displacement"
     DISTANCE = "distance"
+    VELOCITY = "velocity"
 
 
 class FireRule(Enum):

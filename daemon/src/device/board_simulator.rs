@@ -379,6 +379,7 @@ impl BoardSimulator {
         let counts = board.counts as i64;
         let displacement = counts - board.origin;
         let distance = board.distance as i64;
+        let device_velocity = board.device_velocity;
         let seq = board.seq;
 
         let Some((_, zones)) = board.armed.as_mut() else {
@@ -386,7 +387,11 @@ impl BoardSimulator {
         };
         let mut hits = Vec::new();
         for (index, runtime) in zones.iter_mut().enumerate() {
-            let raw = if runtime.zone.metric == 1 { distance } else { displacement };
+            let raw = match runtime.zone.metric {
+                1 => distance,
+                2 => device_velocity,
+                _ => displacement,
+            };
             let value = if runtime.zone.wrap > 0 {
                 raw.rem_euclid(runtime.zone.wrap)
             } else {

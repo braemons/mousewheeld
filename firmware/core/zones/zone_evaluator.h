@@ -27,6 +27,8 @@ namespace mousewheeld {
 struct Metrics {
   int64_t displacement[kMaxAxes] = {};
   int64_t distance[kMaxAxes] = {};
+  // counts/s, over the device's velocity window.
+  int64_t velocity[kMaxAxes] = {};
 };
 
 class ZoneEvaluator {

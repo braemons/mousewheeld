@@ -108,7 +108,8 @@
       "description": "Which quantity a zone is compared against.",
       "enum": [
         "displacement",
-        "distance"
+        "distance",
+        "velocity"
       ],
       "type": "string"
     },
@@ -123,7 +124,7 @@
           "type": "string"
         },
         "ms": {
-          "description": "Pulse width. Ignored by a `level` output.",
+          "description": "Pulse width, 10 ms when omitted. Ignored by a `level` output.",
           "format": "int32",
           "minimum": 0,
           "type": [

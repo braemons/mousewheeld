@@ -117,15 +117,19 @@ A zone, as the device receives it — **integer counts, no names, no units**
 |---|---|
 | `index` | its place in the set; `zones_end` is refused unless every index in `0..n` arrived |
 | `intervals` | per axis: `{axis, lo?, hi?}` in counts, an absent bound open |
-| `metric` | `DISPLACEMENT` (counts − origin) or `DISTANCE` (the odometer) |
-| `wrap` | period in counts, 0 for a straight track; bounds must lie in `[0, wrap)` |
+| `metric` | `DISPLACEMENT` (counts − origin), `DISTANCE` (the odometer), or `VELOCITY` (counts/s over the board's 20 ms window, signed) |
+| `wrap` | period in counts, 0 for a straight track; bounds must lie in `[0, wrap)`. A `VELOCITY` zone cannot wrap |
 | `fire` | `ONCE`, or `REARM` after leaving by `hysteresis` counts |
 | `level_on_arm` | fire on arming if already inside |
 | `line`, `action`, `pulse_ms` | the output line index; `PULSE` for `pulse_ms`, or `LEVEL` while engaged |
 
 A zone is refused whole — `bad_zone`, `bad_axis`, `bad_line` — if the board could
 not evaluate all of it: an axis or line it was not told of, a value from a newer
-protocol, a pulse of 0 ms.
+protocol, a pulse of 0 ms, a velocity that wraps.
+
+A velocity zone is evaluated whenever the board's velocity changes as well as
+whenever the counts do: a wheel that stops reads zero one window later with
+nothing moving, and the zone has to leave then.
 
 The daemon compiles centimetres into these counts against a named calibration,
 which is why **changing the calibration marks every compiled set stale** and the

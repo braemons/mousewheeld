@@ -209,7 +209,7 @@ As authored:
     { "name": "goal",
       "shape": "rect",                 // the only shape today
       "axes": ["wheel"],
-      "metric": "displacement",        // | "distance"
+      "metric": "displacement",        // | "distance" | "velocity" (bounds in cm/s)
       "min_cm": [200.0], "max_cm": [null],   // null = open bound
       "fire": "once",                  // | "rearm", with hysteresis_cm
       "output": {"line": "zone_goal", "action": "pulse", "ms": 10} },
@@ -282,6 +282,11 @@ Computed in **both** places, for different jobs, and never confused:
 | For | the analog `velocity` mode; `state_report`; optionally `v` on each `sample` | the API, the UI, zone-free analysis, path summaries |
 | Unit on the wire | counts/s, integer | `velocity_cm_s` |
 | Recorded | yes, as sent (`device_velocity_cm_s`) | yes (`velocity_cm_s`) |
+
+The device velocity is also a zone **metric**: `"velocity"`, with bounds in
+cm/s, so "running faster than 10 cm/s" is a line decided in the scan like any
+other zone. It is the device's number rather than the host's because a zone's
+line is the device's decision.
 
 Both are recorded because they answer different questions — what the board acted
 on, and what the animal did — and a record that silently kept only one could not

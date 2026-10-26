@@ -29,6 +29,9 @@ Refusal check_zone(const Zone& zone, uint8_t n_axes, LineMask lines) {
     }
   }
   if (zone.wrap < 0) return Refusal::because("bad_zone", "wrap is negative");
+  if (zone.wrap != 0 && zone.metric == Metric::kVelocity) {
+    return Refusal::because("bad_zone", "a velocity does not wrap");
+  }
   if (zone.hysteresis < 0) return Refusal::because("bad_zone", "hysteresis is negative");
   if (zone.line >= kMaxLines || !(lines & (1u << zone.line))) {
     return Refusal::because("bad_line", "line %u is not configured", zone.line);

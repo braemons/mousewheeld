@@ -12,7 +12,7 @@
 
 namespace mousewheeld {
 
-enum class Metric : uint8_t { kDisplacement = 0, kDistance = 1 };
+enum class Metric : uint8_t { kDisplacement = 0, kDistance = 1, kVelocity = 2 };
 enum class Fire : uint8_t { kOnce = 0, kRearm = 1 };
 enum class Action : uint8_t { kPulse = 0, kLevel = 1 };
 

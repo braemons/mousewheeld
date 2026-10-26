@@ -868,6 +868,11 @@ pub enum ZoneMetric {
     Displacement = 1,
     /// Direction-free odometer, `Σ |Δcounts|`. What "how much did it run" is.
     Distance = 2,
+    /// Signed, the board's own velocity over its 20 ms window. What "running
+    /// faster than" is. The bounds and `hysteresis_cm` are then cm/s, and a
+    /// velocity zone cannot wrap. Usually `fire: rearm` with a `level` output,
+    /// so the line is high for as long as the animal keeps the speed up.
+    Velocity = 3,
 }
 impl ZoneMetric {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -879,6 +884,7 @@ impl ZoneMetric {
             Self::Unspecified => "ZONE_METRIC_UNSPECIFIED",
             Self::Displacement => "ZONE_METRIC_DISPLACEMENT",
             Self::Distance => "ZONE_METRIC_DISTANCE",
+            Self::Velocity => "ZONE_METRIC_VELOCITY",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -887,6 +893,7 @@ impl ZoneMetric {
             "ZONE_METRIC_UNSPECIFIED" => Some(Self::Unspecified),
             "ZONE_METRIC_DISPLACEMENT" => Some(Self::Displacement),
             "ZONE_METRIC_DISTANCE" => Some(Self::Distance),
+            "ZONE_METRIC_VELOCITY" => Some(Self::Velocity),
             _ => None,
         }
     }

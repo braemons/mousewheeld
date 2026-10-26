@@ -65,7 +65,7 @@ Zone zone_from_wire(const mousewheeld_link_v1_Zone& wire, Refusal& refusal) {
     zone.intervals[i].has_hi = interval.has_hi;
     zone.intervals[i].hi = interval.hi;
   }
-  if (wire.metric > mousewheeld_link_v1_Metric_METRIC_DISTANCE ||
+  if (wire.metric > mousewheeld_link_v1_Metric_METRIC_VELOCITY ||
       wire.fire > mousewheeld_link_v1_Fire_FIRE_REARM ||
       wire.action > mousewheeld_link_v1_Action_ACTION_LEVEL) {
     // A value from a newer protocol. Evaluating half of a zone is worse than

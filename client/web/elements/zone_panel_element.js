@@ -393,11 +393,16 @@ export class ZonePanelElement extends BasePanelElement {
 
   /// Where the marker goes: the metric the zones on this axis are defined on,
   /// wrapped the same way they are. A zone measured on distance compared
-  /// against a displacement marker would be a picture of the wrong thing.
+  /// against a displacement marker would be a picture of the wrong thing. A
+  /// velocity zone's marker is the board's velocity, the number it compares.
   positionOn(axis, zones, wrap) {
     if (axis === undefined) return null;
-    const onDistance = zones.some((zone) => metricName(zone.metric) === "distance");
-    const value = onDistance ? axis.distance_cm : axis.position_cm;
+    const metrics = new Set(zones.map((zone) => metricName(zone.metric)));
+    const value = metrics.has("distance")
+      ? axis.distance_cm
+      : metrics.has("velocity") && metrics.size === 1
+        ? axis.device_velocity_cm_s
+        : axis.position_cm;
     if (typeof value !== "number") return null;
     return wrap ? ((value % wrap) + wrap) % wrap : value;
   }

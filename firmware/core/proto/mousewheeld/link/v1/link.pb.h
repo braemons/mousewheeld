@@ -19,7 +19,8 @@ typedef enum _mousewheeld_link_v1_AxisSource {
 
 typedef enum _mousewheeld_link_v1_Metric {
     mousewheeld_link_v1_Metric_METRIC_DISPLACEMENT = 0, /* counts − origin, signed */
-    mousewheeld_link_v1_Metric_METRIC_DISTANCE = 1 /* Σ|Δcounts| since the origin was set */
+    mousewheeld_link_v1_Metric_METRIC_DISTANCE = 1, /* Σ|Δcounts| since the origin was set */
+    mousewheeld_link_v1_Metric_METRIC_VELOCITY = 2 /* counts/s over the device's velocity window, signed */
 } mousewheeld_link_v1_Metric;
 
 typedef enum _mousewheeld_link_v1_Fire {
@@ -323,8 +324,8 @@ extern "C" {
 #define _mousewheeld_link_v1_AxisSource_ARRAYSIZE ((mousewheeld_link_v1_AxisSource)(mousewheeld_link_v1_AxisSource_AXIS_SOURCE_OPTICAL_SPI+1))
 
 #define _mousewheeld_link_v1_Metric_MIN mousewheeld_link_v1_Metric_METRIC_DISPLACEMENT
-#define _mousewheeld_link_v1_Metric_MAX mousewheeld_link_v1_Metric_METRIC_DISTANCE
-#define _mousewheeld_link_v1_Metric_ARRAYSIZE ((mousewheeld_link_v1_Metric)(mousewheeld_link_v1_Metric_METRIC_DISTANCE+1))
+#define _mousewheeld_link_v1_Metric_MAX mousewheeld_link_v1_Metric_METRIC_VELOCITY
+#define _mousewheeld_link_v1_Metric_ARRAYSIZE ((mousewheeld_link_v1_Metric)(mousewheeld_link_v1_Metric_METRIC_VELOCITY+1))
 
 #define _mousewheeld_link_v1_Fire_MIN mousewheeld_link_v1_Fire_FIRE_ONCE
 #define _mousewheeld_link_v1_Fire_MAX mousewheeld_link_v1_Fire_FIRE_REARM

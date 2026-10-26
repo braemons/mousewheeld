@@ -392,6 +392,8 @@ pub enum Metric {
     Displacement = 0,
     /// Σ|Δcounts| since the origin was set
     Distance = 1,
+    /// counts/s over the device's velocity window, signed
+    Velocity = 2,
 }
 impl Metric {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -402,6 +404,7 @@ impl Metric {
         match self {
             Self::Displacement => "METRIC_DISPLACEMENT",
             Self::Distance => "METRIC_DISTANCE",
+            Self::Velocity => "METRIC_VELOCITY",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -409,6 +412,7 @@ impl Metric {
         match value {
             "METRIC_DISPLACEMENT" => Some(Self::Displacement),
             "METRIC_DISTANCE" => Some(Self::Distance),
+            "METRIC_VELOCITY" => Some(Self::Velocity),
             _ => None,
         }
     }

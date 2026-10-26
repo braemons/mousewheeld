@@ -115,6 +115,11 @@ pub enum ZoneMetric {
     Displacement,
     /// Direction-free odometer, `Σ |Δcounts|`. What "how much did it run" is.
     Distance,
+    /// Signed, the board's own velocity over its 20 ms window. What "running
+    /// faster than" is. The bounds and `hysteresis_cm` are then **cm/s**, and
+    /// the zone cannot wrap. Usually `fire: rearm` with a `level` output, so
+    /// the line is high for as long as the animal keeps the speed up.
+    Velocity,
 }
 
 /// What happens after a zone fires.
@@ -144,7 +149,7 @@ pub struct ZoneOutput {
     /// A **name** from the rig config's line map, never a pin number.
     pub line: String,
     pub action: OutputAction,
-    /// Pulse width. Ignored by a `level` output.
+    /// Pulse width, 10 ms when omitted. Ignored by a `level` output.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ms: Option<u32>,
 }

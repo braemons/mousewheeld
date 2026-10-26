@@ -15,8 +15,12 @@ int64_t outside_by(const Zone& zone, const Metrics& metrics) {
   int64_t worst = 0;
   for (uint8_t i = 0; i < zone.n_intervals; ++i) {
     const Interval& interval = zone.intervals[i];
-    int64_t value = zone.metric == Metric::kDistance ? metrics.distance[interval.axis]
-                                                     : metrics.displacement[interval.axis];
+    int64_t value;
+    switch (zone.metric) {
+      case Metric::kDistance: value = metrics.distance[interval.axis]; break;
+      case Metric::kVelocity: value = metrics.velocity[interval.axis]; break;
+      default: value = metrics.displacement[interval.axis]; break;
+    }
     if (zone.wrap > 0) value = modulo(value, zone.wrap);
 
     const bool below = interval.has_lo && value < interval.lo;

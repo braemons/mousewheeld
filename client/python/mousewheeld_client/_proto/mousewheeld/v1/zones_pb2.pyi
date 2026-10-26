@@ -19,6 +19,7 @@ class ZoneMetric(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     ZONE_METRIC_UNSPECIFIED: _ClassVar[ZoneMetric]
     ZONE_METRIC_DISPLACEMENT: _ClassVar[ZoneMetric]
     ZONE_METRIC_DISTANCE: _ClassVar[ZoneMetric]
+    ZONE_METRIC_VELOCITY: _ClassVar[ZoneMetric]
 
 class FireRule(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
@@ -42,6 +43,7 @@ ZONE_SHAPE_RECT: ZoneShape
 ZONE_METRIC_UNSPECIFIED: ZoneMetric
 ZONE_METRIC_DISPLACEMENT: ZoneMetric
 ZONE_METRIC_DISTANCE: ZoneMetric
+ZONE_METRIC_VELOCITY: ZoneMetric
 FIRE_RULE_UNSPECIFIED: FireRule
 FIRE_RULE_ONCE: FireRule
 FIRE_RULE_REARM: FireRule

@@ -49,7 +49,7 @@ use crate::model::device::{
 use crate::model::state::{
     AxisState, LinkHealth, LinkState, RigState, Sample, StreamFrame, ZoneHitEvent,
 };
-use crate::model::zone_set::{ArmOrigin, FireRule, ZoneMetric, ZoneStatus};
+use crate::model::zone_set::{ArmOrigin, FireRule, OutputAction, ZoneMetric, ZoneStatus};
 use crate::publish::SegmentPublisher;
 use crate::zones::{CompiledZone, CompiledZoneSet};
 
@@ -84,9 +84,6 @@ const PROTOCOL_VERSION: u32 = 1;
 /// the delimiter. The ESP32 firmware's, and room for any message this protocol
 /// has.
 const DEFAULT_MAX_FRAME: usize = 256;
-/// How long a zone's pulse is. The authored set has no width yet, so it is the
-/// width statemachined's lines use.
-const ZONE_PULSE_MS: u32 = 10;
 const OLDEST_PROTOCOL_SPOKEN: u32 = 1;
 /// The rule this arrangement exists for, as a compile error rather than a test:
 /// firmware is flashed separately and will be older than the daemon, so a floor
@@ -1144,7 +1141,8 @@ fn speaks_protocol(board: u32) -> bool {
 /// The set is compiled in the host's frame and the board counts in its own,
 /// uninverted, so a displacement interval on an inverted axis is mirrored on
 /// the way out: the board's intervals are closed, and `lo ≤ -x ≤ hi` is exactly
-/// `-hi ≤ x ≤ -lo`. Distance has no sign and is not touched.
+/// `-hi ≤ x ≤ -lo`. A velocity is signed the same way and is mirrored too;
+/// distance has no sign and is not touched.
 fn wire_zone(index: usize, zone: &CompiledZone, inverted: &[bool]) -> WireZone {
     let wrap = zone.wrap_counts.unwrap_or(0);
     WireZone {
@@ -1156,7 +1154,7 @@ fn wire_zone(index: usize, zone: &CompiledZone, inverted: &[bool]) -> WireZone {
             .map(|(i, axis)| {
                 let lo = zone.min_counts.get(i).copied().flatten();
                 let hi = zone.max_counts.get(i).copied().flatten();
-                let mirrored = zone.metric == ZoneMetric::Displacement
+                let mirrored = zone.metric != ZoneMetric::Distance
                     && inverted.get(*axis).copied().unwrap_or(false);
                 let (lo, hi) = if mirrored { mirror(lo, hi, wrap) } else { (lo, hi) };
                 Interval { axis: *axis as u32, lo, hi }
@@ -1165,6 +1163,7 @@ fn wire_zone(index: usize, zone: &CompiledZone, inverted: &[bool]) -> WireZone {
         metric: match zone.metric {
             ZoneMetric::Displacement => Metric::Displacement,
             ZoneMetric::Distance => Metric::Distance,
+            ZoneMetric::Velocity => Metric::Velocity,
         } as i32,
         wrap: zone.wrap_counts.unwrap_or(0),
         fire: match zone.fire {
@@ -1174,8 +1173,11 @@ fn wire_zone(index: usize, zone: &CompiledZone, inverted: &[bool]) -> WireZone {
         hysteresis: zone.hysteresis_counts,
         level_on_arm: zone.level,
         line: u32::from(zone.line_index),
-        action: Action::Pulse as i32,
-        pulse_ms: ZONE_PULSE_MS,
+        action: match zone.action {
+            OutputAction::Pulse => Action::Pulse,
+            OutputAction::Level => Action::Level,
+        } as i32,
+        pulse_ms: zone.pulse_ms,
     }
 }
 
@@ -1282,6 +1284,8 @@ mod tests {
             hysteresis_counts: 0,
             level: false,
             line_index: 0,
+            action: OutputAction::Pulse,
+            pulse_ms: 10,
         };
         let interval = |zone: &CompiledZone, inverted| wire_zone(0, zone, &[inverted]).intervals[0];
         assert_eq!((interval(&zone, false).lo, interval(&zone, false).hi), (Some(400), None));
@@ -1289,6 +1293,8 @@ mod tests {
 
         let distance = CompiledZone { metric: ZoneMetric::Distance, ..zone.clone() };
         assert_eq!(interval(&distance, true).lo, Some(400), "distance has no sign");
+        let velocity = CompiledZone { metric: ZoneMetric::Velocity, ..zone.clone() };
+        assert_eq!(interval(&velocity, true).hi, Some(-400), "a velocity has one");
 
         // On a 1000-count lap: [100, 300] is [700, 900] the other way round,
         // and [0, 300] is [700, the end of the lap].

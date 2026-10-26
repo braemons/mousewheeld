@@ -110,6 +110,29 @@ TEST_CASE("arming with origin current zeroes displacement, and the zone pulses f
   CHECK(fake::high == 0);
 }
 
+TEST_CASE("a velocity zone's line falls when the wheel stops, with nothing moving") {
+  Bench b;
+  REQUIRE_FALSE(b.device.set_line(0, 12, false));
+  REQUIRE_FALSE(b.device.begin_upload(4, 1, "speed"));
+  Zone zone;
+  zone.n_intervals = 1;
+  // 2 counts per scan is 2 * kScanHz counts/s; ask for half of it.
+  zone.intervals[0] = {0, true, false, static_cast<int64_t>(kScanHz), 0};
+  zone.metric = Metric::kVelocity;
+  zone.fire = Fire::kRearm;
+  zone.action = Action::kLevel;
+  zone.hysteresis = static_cast<int64_t>(kScanHz) / 10;
+  REQUIRE_FALSE(b.device.add_zone(0, zone));
+  REQUIRE_FALSE(b.device.end_upload());
+  REQUIRE_FALSE(b.device.arm(1, 4, true, b.now));
+
+  const int window = static_cast<int>(kVelocityWindowUs / kScanPeriodUs);
+  b.scans(2 * window, 2);
+  CHECK(fake::high == 0b1);
+  b.scans(2 * window);
+  CHECK(fake::high == 0);
+}
+
 TEST_CASE("arm refuses a version the board does not hold") {
   Bench b;
   CHECK(b.device.arm(1, 3, true, b.now).code == std::string("no_zone_set"));

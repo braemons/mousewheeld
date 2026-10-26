@@ -19,7 +19,7 @@ use std::time::{Duration, Instant};
 use mousewheeld::device::{AxisSetup, Backend, Device};
 use mousewheeld::link::serial::{duplicate, pty_pair};
 use mousewheeld::model::state::StreamFrame;
-use mousewheeld::model::zone_set::{ArmOrigin, FireRule, ZoneMetric};
+use mousewheeld::model::zone_set::{ArmOrigin, FireRule, OutputAction, ZoneMetric};
 use mousewheeld::zones::{CompiledZone, CompiledZoneSet};
 
 const COUNTS_PER_CM: f64 = 40.0;
@@ -121,6 +121,8 @@ fn the_daemon_and_the_firmware_agree_on_the_link() {
             hysteresis_counts: 0,
             level: false,
             line_index: 0,
+            action: OutputAction::Pulse,
+            pulse_ms: 10,
         }],
         counts_per_cm: COUNTS_PER_CM,
     };
@@ -144,5 +146,68 @@ fn the_daemon_and_the_firmware_agree_on_the_link() {
         "fired at {} cm",
         hit.position_cm
     );
+    assert!(device.info(String::new()).link.last_error.is_none(), "{:?}", device.info(String::new()).link);
+}
+
+#[test]
+fn a_velocity_zone_with_a_level_output_is_one_the_firmware_takes_and_evaluates() {
+    let Some(program) = native_device() else { return };
+    let (_board, path) = spawn_board(&program);
+    let device = Device::new(
+        Backend::Port { path, baud: 0 },
+        vec![AxisSetup { name: "wheel".into(), counts_per_cm: COUNTS_PER_CM, invert: false }],
+        vec![(0, 12, false)],
+        500,
+        None,
+    );
+    let mut frames = device.subscribe_frames();
+    wait_for("the board's hello_ack", Duration::from_secs(5), || device.connected());
+    let first = device.counts_of("wheel");
+    wait_for("the wheel to move on the stream", Duration::from_secs(5), || {
+        device.counts_of("wheel") > first.map(|c| c + 400)
+    });
+
+    // Faster than 50 cm/s, and the wheel turns at 100: inside already, so it
+    // fires on the arm because `level` asks it to.
+    let speed = |min_cm_s: f64| CompiledZoneSet {
+        name: "speed".into(),
+        version: 1,
+        zones: vec![CompiledZone {
+            name: "speed".into(),
+            axis_indices: vec![0],
+            metric: ZoneMetric::Velocity,
+            min_counts: vec![Some((min_cm_s * COUNTS_PER_CM) as i64)],
+            max_counts: vec![None],
+            wrap_counts: None,
+            fire: FireRule::Rearm,
+            hysteresis_counts: (5.0 * COUNTS_PER_CM) as i64,
+            level: true,
+            line_index: 0,
+            action: OutputAction::Level,
+            pulse_ms: 0,
+        }],
+        counts_per_cm: COUNTS_PER_CM,
+    };
+    let next_hit = |frames: &mut tokio::sync::broadcast::Receiver<StreamFrame>, within: Duration| {
+        let deadline = Instant::now() + within;
+        loop {
+            if Instant::now() >= deadline {
+                return None;
+            }
+            match frames.try_recv() {
+                Ok(StreamFrame::ZoneHit(hit)) => return Some(hit),
+                Ok(_) | Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => {}
+                Err(_) => std::thread::sleep(Duration::from_millis(5)),
+            }
+        }
+    };
+
+    let arm_id = device.arm(speed(50.0), ArmOrigin::Current, None).expect("the board took a velocity zone");
+    let hit = next_hit(&mut frames, Duration::from_secs(5)).expect("a zone_hit");
+    assert_eq!((hit.zone.as_str(), hit.arm_id), ("speed", arm_id));
+
+    // Faster than the wheel ever turns: nothing.
+    device.arm(speed(200.0), ArmOrigin::Current, None).expect("armed");
+    assert!(next_hit(&mut frames, Duration::from_millis(500)).is_none(), "a zone the wheel is too slow for fired");
     assert!(device.info(String::new()).link.last_error.is_none(), "{:?}", device.info(String::new()).link);
 }

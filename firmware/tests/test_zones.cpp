@@ -109,6 +109,31 @@ TEST_CASE("a distance zone reads the odometer") {
   CHECK(zones.evaluate(at(-200, 500)) == 1);
 }
 
+TEST_CASE("a velocity zone reads the velocity, and holds its level while the speed stays up") {
+  Zone zone = rect(1000, 0, Fire::kRearm);
+  zone.intervals[0].has_hi = false;
+  zone.metric = Metric::kVelocity;
+  zone.action = Action::kLevel;
+  zone.hysteresis = 200;
+  ZoneEvaluator zones;
+  Metrics m;
+  zones.arm(set_of({zone}), 1, m);
+  m.displacement[0] = 5000;  // far along the track, and still too slow
+  m.velocity[0] = 999;
+  CHECK(zones.evaluate(m) == 0);
+  m.velocity[0] = 1000;
+  CHECK(zones.evaluate(m) == 1);
+  CHECK(zones.level_lines() == 0b1);
+  m.velocity[0] = 850;  // a dip inside the hysteresis
+  CHECK(zones.evaluate(m) == 0);
+  CHECK(zones.level_lines() == 0b1);
+  m.velocity[0] = 800;
+  zones.evaluate(m);
+  CHECK(zones.level_lines() == 0);
+  m.velocity[0] = 1200;
+  CHECK(zones.evaluate(m) == 1);
+}
+
 TEST_CASE("a two-axis rect needs both axes inside") {
   Zone zone = rect(0, 10);
   zone.n_intervals = 2;
@@ -182,6 +207,10 @@ TEST_CASE("check_zone refuses what the board cannot evaluate") {
   Zone wrapped = rect(0, 400);
   wrapped.wrap = 300;
   CHECK(check_zone(wrapped, 1, 0b1).code == std::string("bad_zone"));
+  Zone wrapped_velocity = rect(0, 1);
+  wrapped_velocity.metric = Metric::kVelocity;
+  wrapped_velocity.wrap = 300;
+  CHECK(check_zone(wrapped_velocity, 1, 0b1).code == std::string("bad_zone"));
   Zone instant = rect(0, 1);
   instant.pulse_ms = 0;
   CHECK(check_zone(instant, 1, 0b1).code == std::string("bad_zone"));

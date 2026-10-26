@@ -80,6 +80,7 @@ fn metric_to_wire(metric: m::ZoneMetric) -> wire::ZoneMetric {
     match metric {
         m::ZoneMetric::Displacement => wire::ZoneMetric::Displacement,
         m::ZoneMetric::Distance => wire::ZoneMetric::Distance,
+        m::ZoneMetric::Velocity => wire::ZoneMetric::Velocity,
     }
 }
 
@@ -159,6 +160,7 @@ fn zone_from_wire(zone: wire::Zone) -> Result<m::Zone, RefusalMessage> {
             Ok(wire::ZoneMetric::Unspecified) => m::ZoneMetric::Displacement,
             Ok(wire::ZoneMetric::Displacement) => m::ZoneMetric::Displacement,
             Ok(wire::ZoneMetric::Distance) => m::ZoneMetric::Distance,
+            Ok(wire::ZoneMetric::Velocity) => m::ZoneMetric::Velocity,
             Err(_) => return Err(format!("zone {name:?} has a metric this daemon does not know")),
         },
         fire: match wire::FireRule::try_from(zone.fire) {

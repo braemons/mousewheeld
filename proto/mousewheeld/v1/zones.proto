@@ -230,6 +230,11 @@ enum ZoneMetric {
   ZONE_METRIC_DISPLACEMENT = 1;
   // Direction-free odometer, `Σ |Δcounts|`. What "how much did it run" is.
   ZONE_METRIC_DISTANCE = 2;
+  // Signed, the board's own velocity over its 20 ms window. What "running
+  // faster than" is. The bounds and `hysteresis_cm` are then cm/s, and a
+  // velocity zone cannot wrap. Usually `fire: rearm` with a `level` output,
+  // so the line is high for as long as the animal keeps the speed up.
+  ZONE_METRIC_VELOCITY = 3;
 }
 
 // What happens after a zone fires.

@@ -14,6 +14,7 @@ Metrics Device::metrics() const {
   for (uint8_t a = 0; a < kMaxAxes; ++a) {
     m.displacement[a] = axes_[a].displacement();
     m.distance[a] = axes_[a].distance();
+    m.velocity[a] = velocity_[a];
   }
   return m;
 }
@@ -45,10 +46,13 @@ void Device::scan(Microseconds now, const int32_t raw[kMaxAxes], uint32_t modulu
 
   // Velocity over a fixed window, whether or not anything moved: a wheel that
   // stopped has to read zero.
+  bool velocity_changed = false;
   if (now - window_start_ >= kVelocityWindowUs) {
     const int64_t elapsed = static_cast<int64_t>(now - window_start_);
     for (uint8_t a = 0; a < n_axes_; ++a) {
-      velocity_[a] = (axes_[a].counts() - window_counts_[a]) * 1000000 / elapsed;
+      const int64_t velocity = (axes_[a].counts() - window_counts_[a]) * 1000000 / elapsed;
+      velocity_changed |= velocity != velocity_[a];
+      velocity_[a] = velocity;
       window_counts_[a] = axes_[a].counts();
     }
     window_start_ = now;
@@ -73,8 +77,9 @@ void Device::scan(Microseconds now, const int32_t raw[kMaxAxes], uint32_t modulu
   }
 
   // Rule 4: an animal sitting still costs a compare per axis. Pulses still end
-  // on time.
-  if (moved && zones_.armed()) {
+  // on time. A velocity can change with nothing moving — a wheel that stopped
+  // reads zero one window later — so a new velocity is a reason to evaluate too.
+  if ((moved || velocity_changed) && zones_.armed()) {
     record_hits(zones_.evaluate(metrics()), now);
     lines_.set_levels(zones_.level_lines());
   }

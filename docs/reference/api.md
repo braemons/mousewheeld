@@ -168,6 +168,16 @@ sees a `$name`, and one that reaches the compiler is a refusal rather than a
 zero. A goal distance that silently became 0 cm is a trial that looks like it
 ran.
 
+**A velocity zone** (`"metric": "velocity"`) compares the board's own velocity
+over its 20 ms window, and its `min_cm`, `max_cm` and `hysteresis_cm` are then
+**cm/s**. It cannot wrap. "Running at least 10 cm/s" is a `rearm` zone with
+`"min_cm": [10]`, a few cm/s of hysteresis and a `level` output: the line is
+high for as long as the speed stays up, and whoever reads it holds it for as
+long as it needs.
+
+**The output is what the set says.** `"action": "level"` holds the line while
+the zone is engaged; `"pulse"` is high for `"ms"`, 10 ms when omitted.
+
 ### `Calibration`
 
 | | |

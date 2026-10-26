@@ -18,7 +18,7 @@ use std::path::PathBuf;
 use crate::model::calibration::Calibration;
 use crate::model::device::Capacities;
 use crate::model::line_map::OutputLine;
-use crate::model::zone_set::{FireRule, ZoneBound, ZoneMetric, ZoneSet, ZoneShape};
+use crate::model::zone_set::{FireRule, OutputAction, ZoneBound, ZoneMetric, ZoneSet, ZoneShape};
 use crate::model::{ApiError, ApiResult};
 
 /// A directory of named zone sets.
@@ -133,6 +133,9 @@ pub struct CompiledZone {
     pub hysteresis_counts: i64,
     pub level: bool,
     pub line_index: u8,
+    pub action: OutputAction,
+    /// 0 for a level output.
+    pub pulse_ms: u32,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -144,6 +147,10 @@ pub struct CompiledZoneSet {
     /// whether it is still valid without guessing.
     pub counts_per_cm: f64,
 }
+
+/// A pulse's width when the zone set does not give one: the width
+/// statemachined's lines use.
+pub const DEFAULT_PULSE_MS: u32 = 10;
 
 /// Turn one authored set into what the board evaluates.
 ///
@@ -256,6 +263,31 @@ pub fn compile(
             .about(about));
         }
 
+        // A velocity has no lap: a wrapped one would compare cm/s modulo a
+        // length.
+        if zone.metric == ZoneMetric::Velocity && zone.wrap_cm.is_some() {
+            return Err(ApiError::refused("bad_zone", "a velocity zone cannot wrap; drop wrap_cm")
+                .about(about));
+        }
+
+        let pulse_ms = match zone.output.action {
+            OutputAction::Level => 0,
+            OutputAction::Pulse => match zone.output.ms.unwrap_or(DEFAULT_PULSE_MS) {
+                0 => {
+                    return Err(ApiError::refused("bad_zone", "a pulse of 0 ms; give output.ms above zero")
+                        .about(about))
+                }
+                ms if ms > u32::from(u16::MAX) => {
+                    return Err(ApiError::refused(
+                        "bad_zone",
+                        format!("a pulse of {ms} ms, and the board's longest is {} ms", u16::MAX),
+                    )
+                    .about(about))
+                }
+                ms => ms,
+            },
+        };
+
         zones.push(CompiledZone {
             name: zone.name.clone(),
             axis_indices,
@@ -267,6 +299,8 @@ pub fn compile(
             hysteresis_counts: (zone.hysteresis_cm.unwrap_or(0.0) * counts_per_cm).round() as i64,
             level: zone.level,
             line_index: line.index,
+            action: zone.output.action,
+            pulse_ms,
         });
     }
 
@@ -384,6 +418,45 @@ mod tests {
             .unwrap_err();
         assert_eq!(refused.body.error, "no_such_line");
         assert!(refused.body.detail.contains("zone_elsewhere"));
+    }
+
+    #[test]
+    fn a_velocity_zone_compiles_to_counts_per_second_with_its_level_output() {
+        let mut speed = zone(ZoneBound::Value(10.0), ZoneBound::Open);
+        speed.metric = ZoneMetric::Velocity;
+        speed.fire = FireRule::Rearm;
+        speed.hysteresis_cm = Some(2.0);
+        speed.output = ZoneOutput { line: "zone_goal".into(), action: OutputAction::Level, ms: None };
+        let compiled = compile("speed", &set(speed.clone()), &BTreeMap::new(), &calibration(), &lines(), &capacities())
+            .unwrap();
+        let zone = &compiled.zones[0];
+        assert_eq!(zone.min_counts, vec![Some(1_000)], "10 cm/s at 100 counts/cm");
+        assert_eq!(zone.hysteresis_counts, 200);
+        assert_eq!((zone.action, zone.pulse_ms), (OutputAction::Level, 0));
+
+        speed.wrap_cm = Some(300.0);
+        let refused = compile("speed", &set(speed), &BTreeMap::new(), &calibration(), &lines(), &capacities())
+            .unwrap_err();
+        assert_eq!(refused.body.error, "bad_zone");
+    }
+
+    #[test]
+    fn a_pulse_keeps_its_width_and_has_one_when_none_is_given() {
+        let mut one = zone(ZoneBound::Value(1.0), ZoneBound::Open);
+        one.output.ms = Some(25);
+        let compiled = compile("goal", &set(one.clone()), &BTreeMap::new(), &calibration(), &lines(), &capacities())
+            .unwrap();
+        assert_eq!((compiled.zones[0].action, compiled.zones[0].pulse_ms), (OutputAction::Pulse, 25));
+
+        one.output.ms = None;
+        let compiled = compile("goal", &set(one.clone()), &BTreeMap::new(), &calibration(), &lines(), &capacities())
+            .unwrap();
+        assert_eq!(compiled.zones[0].pulse_ms, DEFAULT_PULSE_MS);
+
+        one.output.ms = Some(0);
+        let refused = compile("goal", &set(one), &BTreeMap::new(), &calibration(), &lines(), &capacities())
+            .unwrap_err();
+        assert_eq!(refused.body.error, "bad_zone");
     }
 
     #[test]

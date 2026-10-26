@@ -74,6 +74,7 @@ from .api_types import (
 _METRICS = {
     zones_pb2.ZONE_METRIC_DISPLACEMENT: ZoneMetric.DISPLACEMENT,
     zones_pb2.ZONE_METRIC_DISTANCE: ZoneMetric.DISTANCE,
+    zones_pb2.ZONE_METRIC_VELOCITY: ZoneMetric.VELOCITY,
 }
 _SHAPES = {zones_pb2.ZONE_SHAPE_RECT: ZoneShape.RECT}
 _FIRE_RULES = {
