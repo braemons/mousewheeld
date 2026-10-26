@@ -203,16 +203,16 @@ bool flash_save(const uint8_t* buf, size_t len) {
 
 void start_scan(void (*scan)()) {
   scan_fn = scan;
-  // Timer 0 at 1 MHz (80 MHz APB / 80), alarming every scan period.
-  scan_timer = timerBegin(0, 80, true);
-  timerAttachInterrupt(scan_timer, &on_timer, true);
-  timerAlarmWrite(scan_timer, kScanPeriodUs, true);
-  timerAlarmEnable(scan_timer);
+  // Arduino-ESP32 3.x: a timer is asked for by its tick rate, and the driver
+  // picks the unit and divider. 1 MHz, so the alarm is in microseconds.
+  scan_timer = timerBegin(1000000);
+  timerAttachInterrupt(scan_timer, &on_timer);
+  timerAlarm(scan_timer, kScanPeriodUs, true, 0);
 }
 
 void stop_scan() {
   if (scan_timer == nullptr) return;
-  timerAlarmDisable(scan_timer);
+  timerStop(scan_timer);
   timerDetachInterrupt(scan_timer);
   timerEnd(scan_timer);
   scan_timer = nullptr;
