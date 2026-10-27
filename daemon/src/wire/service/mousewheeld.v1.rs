@@ -1340,6 +1340,19 @@ pub mod state_service_server {
             &self,
             request: tonic::Request<crate::wire::SetPositionRequest>,
         ) -> std::result::Result<tonic::Response<crate::wire::RigState>, tonic::Status>;
+        /// Motion nobody ran, for testing a rig end to end without an animal.
+        ///
+        /// **The board** adds the speed to the axis's counter for the duration, so
+        /// everything downstream of the counter sees a wheel turning: the samples,
+        /// both velocities, the published accumulator a corridor is driven from, and
+        /// the zones and their TTLs. A state machine cannot tell. The record can:
+        /// `AxisState.injecting` is set on every sample the injection moved.
+        ///
+        /// Replaces an injection still running on the axis; `duration_ms` 0 ends it.
+        async fn inject_motion(
+            &self,
+            request: tonic::Request<crate::wire::InjectMotionRequest>,
+        ) -> std::result::Result<tonic::Response<crate::wire::RigState>, tonic::Status>;
     }
     /// Where the wheel is.
     #[derive(Debug)]
@@ -1585,6 +1598,51 @@ pub mod state_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = SetPositionSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/mousewheeld.v1.StateService/InjectMotion" => {
+                    #[allow(non_camel_case_types)]
+                    struct InjectMotionSvc<T: StateService>(pub Arc<T>);
+                    impl<
+                        T: StateService,
+                    > tonic::server::UnaryService<crate::wire::InjectMotionRequest>
+                    for InjectMotionSvc<T> {
+                        type Response = crate::wire::RigState;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<crate::wire::InjectMotionRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as StateService>::inject_motion(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = InjectMotionSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

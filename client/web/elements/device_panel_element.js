@@ -39,6 +39,23 @@ export class DevicePanelElement extends BasePanelElement {
         "and a value that jumps backwards jumps the corridor backwards.",
       onClick: () => this.attempt(() => this.api.zeroPosition()),
     });
+    // Built once, not repainted: a number being typed must survive the poll.
+    this.injectSpeed = this.make("input", { type: "number", value: "20", step: "1", class: "mono", style: "width: 5em" });
+    this.injectDuration = this.make("input", { type: "number", value: "2000", min: "0", step: "100", class: "mono", style: "width: 6em" });
+    this.injectButton = this.make("button", {
+      text: "run",
+      title:
+        "The board adds this speed to the first axis's counter: the zones, their TTLs and " +
+        "the corridor see the wheel turn. Samples it moved say `injecting`.",
+      onClick: () =>
+        this.attempt(() =>
+          this.api.injectMotion("", Number(this.injectSpeed.value), Number(this.injectDuration.value)),
+        ),
+    });
+    this.stopButton = this.make("button", {
+      text: "stop",
+      onClick: () => this.attempt(() => this.api.injectMotion("", 0, 0)),
+    });
     this.root.replaceChildren(
       this.make("section", {}, [
         this.make("h2", {}, [
@@ -54,6 +71,15 @@ export class DevicePanelElement extends BasePanelElement {
         ),
         this.failureSlot,
         this.body,
+        this.make("div", { class: "row" }, [
+          this.make("span", { class: "muted", text: "inject motion " }),
+          this.injectSpeed,
+          this.make("span", { class: "muted", text: " cm/s for " }),
+          this.injectDuration,
+          this.make("span", { class: "muted", text: " ms " }),
+          this.injectButton,
+          this.stopButton,
+        ]),
       ]),
     );
   }
@@ -78,6 +104,8 @@ export class DevicePanelElement extends BasePanelElement {
     this.connectButton.disabled = connected;
     this.connectButton.textContent = connected ? "connected" : "connect";
     this.zeroButton.disabled = !connected;
+    this.injectButton.disabled = !connected;
+    this.stopButton.disabled = !connected;
 
     this.body.replaceChildren(
       this.fieldList([
@@ -117,6 +145,7 @@ export class DevicePanelElement extends BasePanelElement {
           this.make("span", { text: `${count(axis.counts)} counts  ` }),
           this.make("span", { text: `${(axis.position_cm ?? 0).toFixed(2)} cm  ` }),
           this.make("span", { class: "muted", text: `${(axis.velocity_cm_s ?? 0).toFixed(1)} cm/s` }),
+          axis.injecting ? this.make("span", { class: "pill warn", text: " injected " }) : null,
         ]),
       );
     }

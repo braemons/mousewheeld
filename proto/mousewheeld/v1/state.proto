@@ -37,6 +37,27 @@ service StateService {
   // The firmware does not support absolute positioning; the daemon computes
   // the required origin offset and sends it to the device.
   rpc SetPosition(SetPositionRequest) returns (RigState);
+
+  // Motion nobody ran, for testing a rig end to end without an animal.
+  //
+  // **The board** adds the speed to the axis's counter for the duration, so
+  // everything downstream of the counter sees a wheel turning: the samples,
+  // both velocities, the published accumulator a corridor is driven from, and
+  // the zones and their TTLs. A state machine cannot tell. The record can:
+  // `AxisState.injecting` is set on every sample the injection moved.
+  //
+  // Replaces an injection still running on the axis; `duration_ms` 0 ends it.
+  rpc InjectMotion(InjectMotionRequest) returns (RigState);
+}
+
+message InjectMotionRequest {
+  // Which axis. Empty means the first.
+  string axis = 1;
+  // Signed, in the axis's own direction: positive is forward as `position_cm`
+  // counts it, whichever way the encoder is mounted.
+  double speed_cm_s = 2 [json_name = "speed_cm_s"];
+  // How long, from the board's next scan. 0 ends the injection running.
+  uint32 duration_ms = 3 [json_name = "duration_ms"];
 }
 
 message WatchStateRequest {
@@ -91,6 +112,10 @@ message AxisState {
   // Both are recorded because they answer different questions, and a record
   // that silently kept one could not be checked against the other.
   double device_velocity_cm_s = 6 [json_name = "device_velocity_cm_s"];
+
+  // An `InjectMotion` was moving this axis in the last sample: the motion is
+  // not the animal's.
+  bool injecting = 7;
 }
 
 // Whether what the rest of the answer says can be believed.

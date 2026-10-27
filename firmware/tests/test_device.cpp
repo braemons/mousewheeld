@@ -181,3 +181,45 @@ TEST_CASE("zero moves the origin of the named axes only") {
   CHECK(b.device.axis(1).counts() == 50);
   CHECK(b.device.zero(0b100).code == std::string("bad_axis"));
 }
+
+TEST_CASE("injected motion is counted, fires the zones, says so on the samples, and stops on time") {
+  Bench b;
+  b.goal_zone(500);
+  REQUIRE_FALSE(b.device.arm(1, 3, true, b.now));
+  REQUIRE_FALSE(b.device.set_stream(10, true));
+  // 1500 counts a second for half a second, with the wheel itself still.
+  REQUIRE_FALSE(b.device.inject(0, 1500, 500, b.now));
+  b.scans(static_cast<int>(kScanHz) / 2 + 5);
+  ZoneHitRecord hit;
+  REQUIRE(b.device.zone_hits().pop(hit));
+  CHECK(hit.counts[0] == 500);
+  b.scans(10);
+  const int64_t counted = b.device.snapshot().counts[0];
+  CHECK(counted >= 745);
+  CHECK(counted <= 755);
+  b.scans(static_cast<int>(kScanHz) / 2);
+  CHECK(b.device.snapshot().counts[0] == counted);
+
+  SampleRecord sample;
+  REQUIRE(b.device.samples().pop(sample));
+  CHECK(sample.injecting == 0b1);
+  SampleRecord last = sample;
+  while (b.device.samples().pop(sample)) last = sample;
+  CHECK(last.injecting == 0);
+  CHECK(last.velocity[0] == 0);
+}
+
+TEST_CASE("an injection can be ended, backwards is backwards, and nonsense is refused") {
+  Bench b;
+  REQUIRE_FALSE(b.device.inject(0, -2000, 10000, b.now));
+  b.scans(static_cast<int>(kScanHz) / 10);
+  CHECK(b.device.snapshot().counts[0] < -150);
+  REQUIRE_FALSE(b.device.inject(0, 0, 0, b.now));
+  const int64_t stopped = b.device.snapshot().counts[0];
+  b.scans(100);
+  CHECK(b.device.snapshot().counts[0] == stopped);
+
+  CHECK(b.device.inject(1, 100, 100, b.now).code == std::string("bad_axis"));
+  CHECK(b.device.inject(0, 2000000, 100, b.now).code == std::string("bad_injection"));
+  CHECK(b.device.inject(0, 100, 600001, b.now).code == std::string("bad_injection"));
+}

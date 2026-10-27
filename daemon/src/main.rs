@@ -19,6 +19,7 @@ use std::sync::{Arc, Mutex};
 use clap::{Parser, Subcommand};
 
 use mousewheeld::daemon_state::Daemon;
+use mousewheeld::device::board_simulator::SimulatedWheel;
 use mousewheeld::device::{Backend, Device};
 use mousewheeld::model::config::{RigConfig, StoredCalibration};
 use mousewheeld::zones::ZoneSetStore;
@@ -73,6 +74,10 @@ enum Command {
         /// exercises is the daemon rather than a story about one.
         #[arg(long)]
         simulate: bool,
+        /// How the simulated animal runs. `idle` for a wheel that moves only
+        /// when `InjectMotion` moves it.
+        #[arg(long, value_enum, default_value_t = SimulatedWheel::Bouts)]
+        simulated_wheel: SimulatedWheel,
         /// Do not advertise `_mousewheeld._tcp`. The API is served either way;
         /// a console then needs this rig's address by hand.
         #[arg(long)]
@@ -103,8 +108,9 @@ fn main() {
             rig_config,
             storage_dir,
             simulate,
+            simulated_wheel,
             no_mdns,
-        } => serve(port, bind, rig_config, storage_dir, simulate, no_mdns),
+        } => serve(port, bind, rig_config, storage_dir, simulate.then_some(simulated_wheel), no_mdns),
         Command::Schema => {
             let schema = mousewheeld::file_schema::zone_set_schema();
             println!(
@@ -130,7 +136,7 @@ fn serve(
     bind: String,
     rig_config: PathBuf,
     storage_dir: PathBuf,
-    simulate: bool,
+    simulate: Option<SimulatedWheel>,
     no_mdns: bool,
 ) {
     let mut config = match RigConfig::load(&rig_config) {
@@ -198,9 +204,9 @@ fn serve(
     // the far end; neither is the same as "no device", which is what a
     // development box without either honestly has.
     let backend = match (simulate, config.device.port.as_str()) {
-        (true, _) => Backend::Simulated,
-        (false, "") => Backend::Absent,
-        (false, port) => Backend::Port {
+        (Some(wheel), _) => Backend::Simulated { wheel },
+        (None, "") => Backend::Absent,
+        (None, port) => Backend::Port {
             path: port.to_string(),
             baud: config.device.baud,
         },
@@ -232,7 +238,7 @@ fn serve(
         measured: Mutex::new(None),
     });
 
-    if simulate {
+    if simulate.is_some() {
         log::warn!("--simulate: a wheel on a thread, not a board. Nothing here is a measurement");
     } else if !daemon.device.connected() {
         log::info!("no board attached; the API is up and the device routes will say so");

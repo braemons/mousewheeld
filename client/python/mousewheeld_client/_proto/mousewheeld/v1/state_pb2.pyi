@@ -6,6 +6,16 @@ from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 
 DESCRIPTOR: _descriptor.FileDescriptor
 
+class InjectMotionRequest(_message.Message):
+    __slots__ = ("axis", "speed_cm_s", "duration_ms")
+    AXIS_FIELD_NUMBER: _ClassVar[int]
+    SPEED_CM_S_FIELD_NUMBER: _ClassVar[int]
+    DURATION_MS_FIELD_NUMBER: _ClassVar[int]
+    axis: str
+    speed_cm_s: float
+    duration_ms: int
+    def __init__(self, axis: _Optional[str] = ..., speed_cm_s: _Optional[float] = ..., duration_ms: _Optional[int] = ...) -> None: ...
+
 class WatchStateRequest(_message.Message):
     __slots__ = ("rate_hz",)
     RATE_HZ_FIELD_NUMBER: _ClassVar[int]
@@ -43,20 +53,22 @@ class LinkState(_message.Message):
     def __init__(self, connected: _Optional[bool] = ...) -> None: ...
 
 class AxisState(_message.Message):
-    __slots__ = ("name", "counts", "position_cm", "distance_cm", "velocity_cm_s", "device_velocity_cm_s")
+    __slots__ = ("name", "counts", "position_cm", "distance_cm", "velocity_cm_s", "device_velocity_cm_s", "injecting")
     NAME_FIELD_NUMBER: _ClassVar[int]
     COUNTS_FIELD_NUMBER: _ClassVar[int]
     POSITION_CM_FIELD_NUMBER: _ClassVar[int]
     DISTANCE_CM_FIELD_NUMBER: _ClassVar[int]
     VELOCITY_CM_S_FIELD_NUMBER: _ClassVar[int]
     DEVICE_VELOCITY_CM_S_FIELD_NUMBER: _ClassVar[int]
+    INJECTING_FIELD_NUMBER: _ClassVar[int]
     name: str
     counts: int
     position_cm: float
     distance_cm: float
     velocity_cm_s: float
     device_velocity_cm_s: float
-    def __init__(self, name: _Optional[str] = ..., counts: _Optional[int] = ..., position_cm: _Optional[float] = ..., distance_cm: _Optional[float] = ..., velocity_cm_s: _Optional[float] = ..., device_velocity_cm_s: _Optional[float] = ...) -> None: ...
+    injecting: bool
+    def __init__(self, name: _Optional[str] = ..., counts: _Optional[int] = ..., position_cm: _Optional[float] = ..., distance_cm: _Optional[float] = ..., velocity_cm_s: _Optional[float] = ..., device_velocity_cm_s: _Optional[float] = ..., injecting: _Optional[bool] = ...) -> None: ...
 
 class LinkHealth(_message.Message):
     __slots__ = ("seq_gaps", "ring_drops", "measured_rate_hz", "stale")

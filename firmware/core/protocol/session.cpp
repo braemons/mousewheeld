@@ -295,6 +295,10 @@ void Session::handle(const mousewheeld_link_v1_HostMessage& message, Microsecond
       answer(device_.disarm(body.disarm.arm_id), id);
       return;
 
+    case mousewheeld_link_v1_HostMessage_inject_tag:
+      answer(device_.inject(body.inject.axis, body.inject.counts_per_s, body.inject.duration_ms, now), id);
+      return;
+
     case mousewheeld_link_v1_HostMessage_zero_tag: {
       uint32_t axes = 0;
       for (pb_size_t i = 0; i < body.zero.axes_count; ++i) {
@@ -382,6 +386,7 @@ void Session::drain_rings() {
     wire.t_us = sample.t_us;
     wire.c_count = device_.n_axes();
     for (uint8_t a = 0; a < device_.n_axes(); ++a) wire.c[a] = sample.counts[a];
+    wire.injecting = sample.injecting;
     if (device_.velocity_on_samples()) {
       wire.v_count = device_.n_axes();
       for (uint8_t a = 0; a < device_.n_axes(); ++a) wire.v[a] = sample.velocity[a];

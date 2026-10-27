@@ -116,6 +116,7 @@ impl Command {
             Ping(_) => "ping",
             State(_) => "state",
             Debug(_) => "debug",
+            Inject(_) => "inject",
         }
     }
 
@@ -147,6 +148,7 @@ impl Command {
             Ping(m) => format!("{m:?}"),
             State(m) => format!("{m:?}"),
             Debug(m) => format!("{m:?}"),
+            Inject(m) => format!("{m:?}"),
         };
         format!(
             r#"{{"msg_type":"{}","message_id":{}}} {fields}"#,
@@ -245,6 +247,10 @@ pub mod commands {
         command(id, Body::Zero(link::Zero { axes }))
     }
 
+    pub fn inject(id: u16, axis: usize, counts_per_s: i32, duration_ms: u32) -> Command {
+        command(id, Body::Inject(link::Inject { axis: axis as u32, counts_per_s, duration_ms }))
+    }
+
     pub fn save(id: u16) -> Command {
         command(id, Body::Save(link::Save {}))
     }
@@ -283,6 +289,7 @@ mod tests {
                 t_us: 8_391_204,
                 c: vec![173_884],
                 v: vec![],
+                injecting: 0,
             })),
         };
         let (id, body) = decode(&sent.encode_to_vec()).unwrap();
@@ -339,7 +346,7 @@ mod tests {
     fn the_monitor_still_finds_samples_by_name() {
         let text = describe_device(
             3,
-            &FromDevice::Sample(Sample { seq: 1, t_us: 2, c: vec![3], v: vec![] }),
+            &FromDevice::Sample(Sample { seq: 1, t_us: 2, c: vec![3], v: vec![], injecting: 0 }),
         );
         assert!(text.contains(r#""msg_type":"sample""#), "{text}");
     }

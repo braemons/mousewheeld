@@ -66,6 +66,9 @@ PB_BIND(mousewheeld_link_v1_StateRequest, mousewheeld_link_v1_StateRequest, AUTO
 PB_BIND(mousewheeld_link_v1_Debug, mousewheeld_link_v1_Debug, AUTO)
 
 
+PB_BIND(mousewheeld_link_v1_Inject, mousewheeld_link_v1_Inject, AUTO)
+
+
 PB_BIND(mousewheeld_link_v1_FlashedSet, mousewheeld_link_v1_FlashedSet, AUTO)
 
 

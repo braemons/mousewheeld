@@ -164,6 +164,18 @@ typedef struct _mousewheeld_link_v1_Debug {
     bool on;
 } mousewheeld_link_v1_Debug;
 
+/* Motion nobody ran: the board adds `counts_per_s` to an axis's counter,
+ raw and uninverted like the counter itself, for `duration_ms` from the next
+ scan. For testing a rig end to end without an animal. Everything downstream
+ of the counter sees it as motion: samples, velocity, the zones and their
+ lines. Replaces an injection still running on that axis; `duration_ms` 0
+ ends it. Samples say which axes it was moving (`Sample.injecting`). */
+typedef struct _mousewheeld_link_v1_Inject {
+    uint32_t axis;
+    int32_t counts_per_s;
+    uint32_t duration_ms;
+} mousewheeld_link_v1_Inject;
+
 /* Everything the daemon sends is one of these. */
 typedef struct _mousewheeld_link_v1_HostMessage {
     /* The sender's per-direction counter, wrapping at 16 bits. For link-level
@@ -186,6 +198,7 @@ typedef struct _mousewheeld_link_v1_HostMessage {
         mousewheeld_link_v1_Ping ping;
         mousewheeld_link_v1_StateRequest state;
         mousewheeld_link_v1_Debug debug;
+        mousewheeld_link_v1_Inject inject;
     } body;
 } mousewheeld_link_v1_HostMessage;
 
@@ -222,6 +235,8 @@ typedef struct _mousewheeld_link_v1_Sample {
     /* Counts per second over the board's window. Empty unless asked for. */
     pb_size_t v_count;
     int64_t v[2];
+    /* Bit i: an `Inject` moved axis i in this sample's scan. */
+    uint32_t injecting;
 } mousewheeld_link_v1_Sample;
 
 typedef struct _mousewheeld_link_v1_ZoneHit {
@@ -380,6 +395,7 @@ extern "C" {
 
 
 
+
 /* Initializer values for message structs */
 #define mousewheeld_link_v1_HostMessage_init_default {0, 0, {mousewheeld_link_v1_Hello_init_default}}
 #define mousewheeld_link_v1_DeviceMessage_init_default {0, 0, {mousewheeld_link_v1_HelloAck_init_default}}
@@ -401,9 +417,10 @@ extern "C" {
 #define mousewheeld_link_v1_Ping_init_default    {0}
 #define mousewheeld_link_v1_StateRequest_init_default {0}
 #define mousewheeld_link_v1_Debug_init_default   {0}
+#define mousewheeld_link_v1_Inject_init_default  {0, 0, 0}
 #define mousewheeld_link_v1_FlashedSet_init_default {"", 0}
 #define mousewheeld_link_v1_HelloAck_init_default {"", "", 0, 0, 0, 0, 0, 0, false, mousewheeld_link_v1_FlashedSet_init_default}
-#define mousewheeld_link_v1_Sample_init_default  {0, 0, 0, {0, 0}, 0, {0, 0}}
+#define mousewheeld_link_v1_Sample_init_default  {0, 0, 0, {0, 0}, 0, {0, 0}, 0}
 #define mousewheeld_link_v1_ZoneHit_init_default {0, 0, 0, 0, 0, {0, 0}}
 #define mousewheeld_link_v1_Armed_init_default   {0, 0, 0, {0, 0}}
 #define mousewheeld_link_v1_StateReport_init_default {0, {0, 0}, 0, {0, 0}, 0, {0, 0}, 0, {0, 0}, 0, 0, false, mousewheeld_link_v1_Armed_init_default, 0, false, mousewheeld_link_v1_Analog_init_default, 0, 0, 0, 0, 0}
@@ -431,9 +448,10 @@ extern "C" {
 #define mousewheeld_link_v1_Ping_init_zero       {0}
 #define mousewheeld_link_v1_StateRequest_init_zero {0}
 #define mousewheeld_link_v1_Debug_init_zero      {0}
+#define mousewheeld_link_v1_Inject_init_zero     {0, 0, 0}
 #define mousewheeld_link_v1_FlashedSet_init_zero {"", 0}
 #define mousewheeld_link_v1_HelloAck_init_zero   {"", "", 0, 0, 0, 0, 0, 0, false, mousewheeld_link_v1_FlashedSet_init_zero}
-#define mousewheeld_link_v1_Sample_init_zero     {0, 0, 0, {0, 0}, 0, {0, 0}}
+#define mousewheeld_link_v1_Sample_init_zero     {0, 0, 0, {0, 0}, 0, {0, 0}, 0}
 #define mousewheeld_link_v1_ZoneHit_init_zero    {0, 0, 0, 0, 0, {0, 0}}
 #define mousewheeld_link_v1_Armed_init_zero      {0, 0, 0, {0, 0}}
 #define mousewheeld_link_v1_StateReport_init_zero {0, {0, 0}, 0, {0, 0}, 0, {0, 0}, 0, {0, 0}, 0, 0, false, mousewheeld_link_v1_Armed_init_zero, 0, false, mousewheeld_link_v1_Analog_init_zero, 0, 0, 0, 0, 0}
@@ -480,6 +498,9 @@ extern "C" {
 #define mousewheeld_link_v1_Analog_lo_tag        4
 #define mousewheeld_link_v1_Analog_hi_tag        5
 #define mousewheeld_link_v1_Debug_on_tag         1
+#define mousewheeld_link_v1_Inject_axis_tag      1
+#define mousewheeld_link_v1_Inject_counts_per_s_tag 2
+#define mousewheeld_link_v1_Inject_duration_ms_tag 3
 #define mousewheeld_link_v1_HostMessage_message_id_tag 1
 #define mousewheeld_link_v1_HostMessage_hello_tag 10
 #define mousewheeld_link_v1_HostMessage_axes_tag 11
@@ -496,6 +517,7 @@ extern "C" {
 #define mousewheeld_link_v1_HostMessage_ping_tag 22
 #define mousewheeld_link_v1_HostMessage_state_tag 23
 #define mousewheeld_link_v1_HostMessage_debug_tag 24
+#define mousewheeld_link_v1_HostMessage_inject_tag 25
 #define mousewheeld_link_v1_FlashedSet_name_tag  1
 #define mousewheeld_link_v1_FlashedSet_version_tag 2
 #define mousewheeld_link_v1_HelloAck_board_tag   1
@@ -511,6 +533,7 @@ extern "C" {
 #define mousewheeld_link_v1_Sample_t_us_tag      2
 #define mousewheeld_link_v1_Sample_c_tag         3
 #define mousewheeld_link_v1_Sample_v_tag         4
+#define mousewheeld_link_v1_Sample_injecting_tag 5
 #define mousewheeld_link_v1_ZoneHit_seq_tag      1
 #define mousewheeld_link_v1_ZoneHit_arm_id_tag   2
 #define mousewheeld_link_v1_ZoneHit_zone_tag     3
@@ -567,7 +590,8 @@ X(a, STATIC,   ONEOF,    MESSAGE,  (body,analog,body.analog),  20) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (body,save,body.save),  21) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (body,ping,body.ping),  22) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (body,state,body.state),  23) \
-X(a, STATIC,   ONEOF,    MESSAGE,  (body,debug,body.debug),  24)
+X(a, STATIC,   ONEOF,    MESSAGE,  (body,debug,body.debug),  24) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (body,inject,body.inject),  25)
 #define mousewheeld_link_v1_HostMessage_CALLBACK NULL
 #define mousewheeld_link_v1_HostMessage_DEFAULT NULL
 #define mousewheeld_link_v1_HostMessage_body_hello_MSGTYPE mousewheeld_link_v1_Hello
@@ -585,6 +609,7 @@ X(a, STATIC,   ONEOF,    MESSAGE,  (body,debug,body.debug),  24)
 #define mousewheeld_link_v1_HostMessage_body_ping_MSGTYPE mousewheeld_link_v1_Ping
 #define mousewheeld_link_v1_HostMessage_body_state_MSGTYPE mousewheeld_link_v1_StateRequest
 #define mousewheeld_link_v1_HostMessage_body_debug_MSGTYPE mousewheeld_link_v1_Debug
+#define mousewheeld_link_v1_HostMessage_body_inject_MSGTYPE mousewheeld_link_v1_Inject
 
 #define mousewheeld_link_v1_DeviceMessage_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, UINT32,   message_id,        1) \
@@ -725,6 +750,13 @@ X(a, STATIC,   SINGULAR, BOOL,     on,                1)
 #define mousewheeld_link_v1_Debug_CALLBACK NULL
 #define mousewheeld_link_v1_Debug_DEFAULT NULL
 
+#define mousewheeld_link_v1_Inject_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   axis,              1) \
+X(a, STATIC,   SINGULAR, SINT32,   counts_per_s,      2) \
+X(a, STATIC,   SINGULAR, UINT32,   duration_ms,       3)
+#define mousewheeld_link_v1_Inject_CALLBACK NULL
+#define mousewheeld_link_v1_Inject_DEFAULT NULL
+
 #define mousewheeld_link_v1_FlashedSet_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, STRING,   name,              1) \
 X(a, STATIC,   SINGULAR, UINT32,   version,           2)
@@ -749,7 +781,8 @@ X(a, STATIC,   OPTIONAL, MESSAGE,  flashed,           9)
 X(a, STATIC,   SINGULAR, UINT64,   seq,               1) \
 X(a, STATIC,   SINGULAR, UINT64,   t_us,              2) \
 X(a, STATIC,   REPEATED, SINT64,   c,                 3) \
-X(a, STATIC,   REPEATED, SINT64,   v,                 4)
+X(a, STATIC,   REPEATED, SINT64,   v,                 4) \
+X(a, STATIC,   SINGULAR, UINT32,   injecting,         5)
 #define mousewheeld_link_v1_Sample_CALLBACK NULL
 #define mousewheeld_link_v1_Sample_DEFAULT NULL
 
@@ -831,6 +864,7 @@ extern const pb_msgdesc_t mousewheeld_link_v1_Save_msg;
 extern const pb_msgdesc_t mousewheeld_link_v1_Ping_msg;
 extern const pb_msgdesc_t mousewheeld_link_v1_StateRequest_msg;
 extern const pb_msgdesc_t mousewheeld_link_v1_Debug_msg;
+extern const pb_msgdesc_t mousewheeld_link_v1_Inject_msg;
 extern const pb_msgdesc_t mousewheeld_link_v1_FlashedSet_msg;
 extern const pb_msgdesc_t mousewheeld_link_v1_HelloAck_msg;
 extern const pb_msgdesc_t mousewheeld_link_v1_Sample_msg;
@@ -863,6 +897,7 @@ extern const pb_msgdesc_t mousewheeld_link_v1_Pong_msg;
 #define mousewheeld_link_v1_Ping_fields &mousewheeld_link_v1_Ping_msg
 #define mousewheeld_link_v1_StateRequest_fields &mousewheeld_link_v1_StateRequest_msg
 #define mousewheeld_link_v1_Debug_fields &mousewheeld_link_v1_Debug_msg
+#define mousewheeld_link_v1_Inject_fields &mousewheeld_link_v1_Inject_msg
 #define mousewheeld_link_v1_FlashedSet_fields &mousewheeld_link_v1_FlashedSet_msg
 #define mousewheeld_link_v1_HelloAck_fields &mousewheeld_link_v1_HelloAck_msg
 #define mousewheeld_link_v1_Sample_fields &mousewheeld_link_v1_Sample_msg
@@ -889,6 +924,7 @@ extern const pb_msgdesc_t mousewheeld_link_v1_Pong_msg;
 #define mousewheeld_link_v1_HelloAck_size        136
 #define mousewheeld_link_v1_Hello_size           6
 #define mousewheeld_link_v1_HostMessage_size     137
+#define mousewheeld_link_v1_Inject_size          18
 #define mousewheeld_link_v1_Interval_size        28
 #define mousewheeld_link_v1_Line_size            14
 #define mousewheeld_link_v1_Lines_size           128
@@ -896,7 +932,7 @@ extern const pb_msgdesc_t mousewheeld_link_v1_Pong_msg;
 #define mousewheeld_link_v1_Ok_size              6
 #define mousewheeld_link_v1_Ping_size            0
 #define mousewheeld_link_v1_Pong_size            6
-#define mousewheeld_link_v1_Sample_size          66
+#define mousewheeld_link_v1_Sample_size          72
 #define mousewheeld_link_v1_Save_size            0
 #define mousewheeld_link_v1_StateReport_size     235
 #define mousewheeld_link_v1_StateRequest_size    0

@@ -90,6 +90,18 @@ impl StateService for super::DaemonServices {
         self.daemon.device.set_position(&req.axes, &req.position_cm);
         Ok(Response::new(rig_state_to_wire(self.daemon.device.state())))
     }
+
+    async fn inject_motion(
+        &self,
+        request: Request<wire::InjectMotionRequest>,
+    ) -> Result<Response<wire::RigState>, Status> {
+        let request = request.into_inner();
+        self.daemon
+            .device
+            .inject_motion(&request.axis, request.speed_cm_s, request.duration_ms)
+            .map_err(super::status_of)?;
+        Ok(Response::new(rig_state_to_wire(self.daemon.device.state())))
+    }
 }
 
 pub fn server(services: super::DaemonServices) -> StateServiceServer<super::DaemonServices> {

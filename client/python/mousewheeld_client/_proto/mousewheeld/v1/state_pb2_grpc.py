@@ -55,6 +55,11 @@ class StateServiceStub:
                 request_serializer=mousewheeld_dot_v1_dot_state__pb2.SetPositionRequest.SerializeToString,
                 response_deserializer=mousewheeld_dot_v1_dot_state__pb2.RigState.FromString,
                 _registered_method=True)
+        self.InjectMotion = channel.unary_unary(
+                '/mousewheeld.v1.StateService/InjectMotion',
+                request_serializer=mousewheeld_dot_v1_dot_state__pb2.InjectMotionRequest.SerializeToString,
+                response_deserializer=mousewheeld_dot_v1_dot_state__pb2.RigState.FromString,
+                _registered_method=True)
 
 
 class StateServiceServicer:
@@ -109,6 +114,21 @@ class StateServiceServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def InjectMotion(self, request, context):
+        """Motion nobody ran, for testing a rig end to end without an animal.
+
+        **The board** adds the speed to the axis's counter for the duration, so
+        everything downstream of the counter sees a wheel turning: the samples,
+        both velocities, the published accumulator a corridor is driven from, and
+        the zones and their TTLs. A state machine cannot tell. The record can:
+        `AxisState.injecting` is set on every sample the injection moved.
+
+        Replaces an injection still running on the axis; `duration_ms` 0 ends it.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_StateServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -130,6 +150,11 @@ def add_StateServiceServicer_to_server(servicer, server):
             'SetPosition': grpc.unary_unary_rpc_method_handler(
                     servicer.SetPosition,
                     request_deserializer=mousewheeld_dot_v1_dot_state__pb2.SetPositionRequest.FromString,
+                    response_serializer=mousewheeld_dot_v1_dot_state__pb2.RigState.SerializeToString,
+            ),
+            'InjectMotion': grpc.unary_unary_rpc_method_handler(
+                    servicer.InjectMotion,
+                    request_deserializer=mousewheeld_dot_v1_dot_state__pb2.InjectMotionRequest.FromString,
                     response_serializer=mousewheeld_dot_v1_dot_state__pb2.RigState.SerializeToString,
             ),
     }
@@ -241,6 +266,33 @@ class StateService:
             target,
             '/mousewheeld.v1.StateService/SetPosition',
             mousewheeld_dot_v1_dot_state__pb2.SetPositionRequest.SerializeToString,
+            mousewheeld_dot_v1_dot_state__pb2.RigState.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def InjectMotion(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/mousewheeld.v1.StateService/InjectMotion',
+            mousewheeld_dot_v1_dot_state__pb2.InjectMotionRequest.SerializeToString,
             mousewheeld_dot_v1_dot_state__pb2.RigState.FromString,
             options,
             channel_credentials,

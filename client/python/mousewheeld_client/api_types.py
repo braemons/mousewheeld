@@ -174,6 +174,8 @@ class AxisState:
     distance_cm: float
     velocity_cm_s: float
     device_velocity_cm_s: float
+    injecting: bool = False
+    """`inject_motion`, not the animal, was moving the axis in the last sample."""
 
 
 @dataclass(frozen=True)

@@ -35,6 +35,16 @@ use crate::wire::link::{
 };
 
 const SCAN_HZ: f64 = 1000.0;
+
+/// How the simulated animal runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, clap::ValueEnum)]
+pub enum SimulatedWheel {
+    /// Six-second bouts at 12–38 cm/s, two seconds' rest between.
+    #[default]
+    Bouts,
+    /// Nobody runs: the wheel moves only when `InjectMotion` moves it.
+    Idle,
+}
 const MAX_FRAME: usize = 256;
 const MAX_ZONES: usize = 16;
 
@@ -70,6 +80,10 @@ struct Board {
     bout_ends_at: Instant,
     speed_counts_s: f64,
     next_drop_at: Instant,
+    wheel: SimulatedWheel,
+    /// `Inject`: counts a second, until when.
+    injection: Option<(f64, Instant)>,
+    injecting: bool,
 }
 
 pub struct BoardSimulator {
@@ -86,7 +100,7 @@ impl BoardSimulator {
     /// `counts_per_cm` is the wheel this board is bolted to — the simulation
     /// needs it only to move at speeds an animal could, since everything it
     /// says on the wire is counts.
-    pub fn spawn(fd: OwnedFd, counts_per_cm: f64) -> io::Result<Arc<AtomicBool>> {
+    pub fn spawn(fd: OwnedFd, counts_per_cm: f64, wheel: SimulatedWheel) -> io::Result<Arc<AtomicBool>> {
         let reader_fd = duplicate(&fd)?;
         let now = Instant::now();
         let simulator = Arc::new(Self {
@@ -112,6 +126,9 @@ impl BoardSimulator {
                 bout_ends_at: now,
                 speed_counts_s: 0.0,
                 next_drop_at: now + Duration::from_secs(5),
+                wheel,
+                injection: None,
+                injecting: false,
             }),
             writer: Mutex::new(FrameWriter::new(fd)),
             running: Arc::new(AtomicBool::new(true)),
@@ -273,6 +290,19 @@ impl BoardSimulator {
                 self.acknowledge(id);
             }
             Command::State(_) => self.send_state_report(),
+            Command::Inject(inject) => {
+                if inject.axis != 0 {
+                    self.refuse("bad_axis", "1 axes are configured", Some(id));
+                    return;
+                }
+                let mut board = self.board.lock().unwrap();
+                board.injection = (inject.duration_ms > 0).then(|| {
+                    let until = Instant::now() + Duration::from_millis(u64::from(inject.duration_ms));
+                    (f64::from(inject.counts_per_s), until)
+                });
+                drop(board);
+                self.acknowledge(id);
+            }
         }
     }
 
@@ -360,6 +390,11 @@ impl BoardSimulator {
     fn step(&self, now: Instant) -> Vec<(usize, u64, i64)> {
         let mut board = self.board.lock().unwrap();
 
+        if board.wheel == SimulatedWheel::Idle {
+            board.resting = true;
+            board.speed_counts_s = 0.0;
+            board.bout_ends_at = now + Duration::from_secs(3600);
+        }
         if now >= board.bout_ends_at {
             board.resting = !board.resting;
             let seconds = if board.resting { 2.0 } else { 6.0 };
@@ -371,7 +406,16 @@ impl BoardSimulator {
             };
         }
         let wobble = 1.0 + 0.12 * (board.seq as f64 / SCAN_HZ * 5.3).sin();
-        let step = (board.speed_counts_s * wobble).max(0.0) / SCAN_HZ;
+        let mut step = (board.speed_counts_s * wobble).max(0.0) / SCAN_HZ;
+        board.injecting = false;
+        if let Some((counts_per_s, until)) = board.injection {
+            if now <= until {
+                step += counts_per_s / SCAN_HZ;
+                board.injecting = true;
+            } else {
+                board.injection = None;
+            }
+        }
         board.counts += step;
         board.distance += step.abs();
         board.device_velocity = ((step * SCAN_HZ / 20.0).round() * 20.0) as i64;
@@ -425,7 +469,7 @@ impl BoardSimulator {
     }
 
     fn emit_sample(&self, now: Instant) {
-        let (seq, counts, velocity, dropped) = {
+        let (seq, counts, velocity, dropped, injecting) = {
             let mut board = self.board.lock().unwrap();
             board.seq += 1;
             let dropped = now >= board.next_drop_at;
@@ -440,6 +484,7 @@ impl BoardSimulator {
                 board.counts as i64,
                 board.velocity.then_some(board.device_velocity),
                 dropped,
+                u32::from(board.injecting),
             )
         };
         if dropped {
@@ -450,6 +495,7 @@ impl BoardSimulator {
             t_us: self.t_us(),
             c: vec![counts],
             v: velocity.into_iter().collect(),
+            injecting,
         }));
     }
 }

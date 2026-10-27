@@ -194,6 +194,7 @@ def axis_state_from_wire(message: state_pb2.AxisState) -> AxisState:
         distance_cm=message.distance_cm,
         velocity_cm_s=message.velocity_cm_s,
         device_velocity_cm_s=message.device_velocity_cm_s,
+        injecting=message.injecting,
     )
 
 

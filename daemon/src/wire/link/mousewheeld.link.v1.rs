@@ -8,7 +8,7 @@ pub struct HostMessage {
     pub message_id: u32,
     #[prost(
         oneof = "host_message::Body",
-        tags = "10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24"
+        tags = "10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25"
     )]
     pub body: ::core::option::Option<host_message::Body>,
 }
@@ -46,6 +46,8 @@ pub mod host_message {
         State(super::StateRequest),
         #[prost(message, tag = "24")]
         Debug(super::Debug),
+        #[prost(message, tag = "25")]
+        Inject(super::Inject),
     }
 }
 /// Everything the board sends is one of these.
@@ -219,6 +221,21 @@ pub struct Debug {
     #[prost(bool, tag = "1")]
     pub on: bool,
 }
+/// Motion nobody ran: the board adds `counts_per_s` to an axis's counter,
+/// raw and uninverted like the counter itself, for `duration_ms` from the next
+/// scan. For testing a rig end to end without an animal. Everything downstream
+/// of the counter sees it as motion: samples, velocity, the zones and their
+/// lines. Replaces an injection still running on that axis; `duration_ms` 0
+/// ends it. Samples say which axes it was moving (`Sample.injecting`).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Inject {
+    #[prost(uint32, tag = "1")]
+    pub axis: u32,
+    #[prost(sint32, tag = "2")]
+    pub counts_per_s: i32,
+    #[prost(uint32, tag = "3")]
+    pub duration_ms: u32,
+}
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct FlashedSet {
     #[prost(string, tag = "1")]
@@ -265,6 +282,9 @@ pub struct Sample {
     /// Counts per second over the board's window. Empty unless asked for.
     #[prost(sint64, repeated, tag = "4")]
     pub v: ::prost::alloc::vec::Vec<i64>,
+    /// Bit i: an `Inject` moved axis i in this sample's scan.
+    #[prost(uint32, tag = "5")]
+    pub injecting: u32,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ZoneHit {

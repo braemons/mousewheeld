@@ -211,3 +211,63 @@ fn a_velocity_zone_with_a_level_output_is_one_the_firmware_takes_and_evaluates()
     assert!(next_hit(&mut frames, Duration::from_millis(500)).is_none(), "a zone the wheel is too slow for fired");
     assert!(device.info(String::new()).link.last_error.is_none(), "{:?}", device.info(String::new()).link);
 }
+
+#[test]
+fn injected_motion_is_motion_to_the_firmware_and_the_zones() {
+    let Some(program) = native_device() else { return };
+    let (_board, path) = spawn_board(&program);
+    let device = Device::new(
+        Backend::Port { path, baud: 0 },
+        vec![AxisSetup { name: "wheel".into(), counts_per_cm: COUNTS_PER_CM, invert: false }],
+        vec![(0, 12, false)],
+        500,
+        None,
+    );
+    let mut frames = device.subscribe_frames();
+    wait_for("the board's hello_ack", Duration::from_secs(5), || device.connected());
+    wait_for("a sample", Duration::from_secs(5), || device.counts_of("wheel").is_some_and(|c| c != 0));
+
+    // Faster than the board's wheel turns (100 cm/s) by itself.
+    let fast = CompiledZoneSet {
+        name: "fast".into(),
+        version: 1,
+        zones: vec![CompiledZone {
+            name: "fast".into(),
+            axis_indices: vec![0],
+            metric: ZoneMetric::Velocity,
+            min_counts: vec![Some((200.0 * COUNTS_PER_CM) as i64)],
+            max_counts: vec![None],
+            wrap_counts: None,
+            fire: FireRule::Rearm,
+            hysteresis_counts: (5.0 * COUNTS_PER_CM) as i64,
+            level: true,
+            line_index: 0,
+            action: OutputAction::Level,
+            pulse_ms: 0,
+        }],
+        counts_per_cm: COUNTS_PER_CM,
+    };
+    let arm_id = device.arm(fast, ArmOrigin::Current, None).expect("armed");
+    std::thread::sleep(Duration::from_millis(200));
+    while frames.try_recv().is_ok() {}
+
+    device.inject_motion("wheel", 150.0, 500).unwrap();
+    let (mut hit, mut injecting) = (None, false);
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < deadline {
+        match frames.try_recv() {
+            Ok(StreamFrame::ZoneHit(zone_hit)) => hit = Some(zone_hit),
+            Ok(StreamFrame::Sample(sample)) => injecting |= sample.axes[0].injecting,
+            Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => {}
+            Err(_) => std::thread::sleep(Duration::from_millis(5)),
+        }
+    }
+    let hit = hit.expect("the injection took the wheel past 200 cm/s");
+    assert_eq!((hit.zone.as_str(), hit.arm_id), ("fast", arm_id));
+    assert!(injecting, "the samples said so");
+    assert!(!device.state().axes[0].injecting, "and stopped saying so when it ended");
+
+    assert_eq!(device.inject_motion("ball", 1.0, 1).unwrap_err().body.error, "no_such_axis");
+    assert_eq!(device.inject_motion("wheel", 1e9, 1).unwrap_err().body.error, "bad_injection");
+    assert!(device.info(String::new()).link.last_error.is_none(), "{:?}", device.info(String::new()).link);
+}

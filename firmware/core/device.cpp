@@ -4,6 +4,12 @@
 #include "hal.h"
 
 namespace mousewheeld {
+namespace {
+
+constexpr int32_t kMostInjectedCountsPerS = 1000000;
+constexpr uint32_t kLongestInjectionMs = 600000;
+
+}  // namespace
 
 void Device::attach(const int32_t raw[kMaxAxes]) {
   for (uint8_t a = 0; a < kMaxAxes; ++a) axes_[a].attach(raw[a]);
@@ -44,6 +50,21 @@ void Device::scan(Microseconds now, const int32_t raw[kMaxAxes], uint32_t modulu
   bool moved = false;
   for (uint8_t a = 0; a < n_axes_; ++a) moved |= axes_[a].update(raw[a], modulus);
 
+  // Injected motion, on the counter itself: whatever reads it next cannot
+  // tell it from a wheel's.
+  uint32_t injecting = 0;
+  const Microseconds elapsed_us = last_injected_ == 0 ? kScanPeriodUs : now - last_injected_;
+  last_injected_ = now;
+  for (uint8_t a = 0; a < n_axes_; ++a) {
+    Injection& injection = injections_[a];
+    if (now > injection.until) continue;
+    injecting |= 1u << a;
+    injection.residue += static_cast<int64_t>(injection.counts_per_s) * static_cast<int64_t>(elapsed_us);
+    const int64_t whole = injection.residue / 1000000;
+    injection.residue -= whole * 1000000;
+    moved |= axes_[a].move(whole);
+  }
+
   // Velocity over a fixed window, whether or not anything moved: a wheel that
   // stopped has to read zero.
   bool velocity_changed = false;
@@ -72,6 +93,7 @@ void Device::scan(Microseconds now, const int32_t raw[kMaxAxes], uint32_t modulu
         sample.counts[a] = axes_[a].counts();
         sample.velocity[a] = velocity_[a];
       }
+      sample.injecting = injecting;
       samples_.push(sample);
     }
   }
@@ -174,6 +196,24 @@ Refusal Device::zero(uint32_t axes) {
   for (uint8_t a = 0; a < n_axes_; ++a) {
     if (axes & (1u << a)) axes_[a].zero();
   }
+  return Refusal::none();
+}
+
+Refusal Device::inject(uint32_t axis, int32_t counts_per_s, uint32_t duration_ms, Microseconds now) {
+  if (axis >= n_axes_) return Refusal::because("bad_axis", "%u axes are configured", n_axes_);
+  if (counts_per_s > kMostInjectedCountsPerS || counts_per_s < -kMostInjectedCountsPerS) {
+    return Refusal::because("bad_injection", "at most %ld counts a second",
+                            static_cast<long>(kMostInjectedCountsPerS));
+  }
+  if (duration_ms > kLongestInjectionMs) {
+    return Refusal::because("bad_injection", "at most %lu ms", static_cast<unsigned long>(kLongestInjectionMs));
+  }
+  ScanLock lock;
+  Injection& injection = injections_[axis];
+  injection = Injection{};
+  injection.counts_per_s = counts_per_s;
+  // `until` is inclusive, so 0 ms must end it rather than run one more scan.
+  injection.until = duration_ms == 0 ? 0 : now + static_cast<Microseconds>(duration_ms) * 1000;
   return Refusal::none();
 }
 

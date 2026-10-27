@@ -134,6 +134,7 @@ not been told about the metadata: `grpcurl`, a log line, a failed test.
 | `WatchState` | the decimated stream. Each frame carries `lost_before`: samples the daemon **never received**, accumulated across the ones decimation dropped. A consumer breaks its line on that and on nothing else — `seq` skips here by design |
 | `ZeroPosition` | moves the **API origin**, on the board and on the host's mirror of it. Never the accumulator a camera differences: a value that jumps backwards jumps the corridor backwards. Teleporting a corridor is a command to vstimd, from whoever runs the experiment |
 | `SetPosition` | moves the API origin so that the axes read `position_cm` — for syncing the wheel to a corridor vstimd has just reset. The board has no absolute positioning; the daemon computes the origin offset and sends that |
+| `InjectMotion` | motion nobody ran, for testing a rig end to end without an animal: `speed_cm_s` (signed, positive is forward) for `duration_ms` on one axis. **The board** adds it to the axis's counter, so the samples, both velocities, the published accumulator and the zones and their TTLs all see the wheel turn; a state machine cannot tell. The record can: `AxisState.injecting` is set on every sample it moved. Replaces an injection still running; `duration_ms: 0` ends it. Refused here (`bad_injection`) above the board's limits — 10⁶ counts/s, 10 minutes — because the link does not wait for the board's answer. Under `--simulate`, `--simulated-wheel idle` makes it the only motion there is |
 
 ### `Zones`
 

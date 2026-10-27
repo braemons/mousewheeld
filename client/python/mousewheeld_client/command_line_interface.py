@@ -156,6 +156,10 @@ def build_parser() -> argparse.ArgumentParser:
     commands.add_parser("wire", help="follow the serial conversation, both directions")
     commands.add_parser("wire-log", help="the serial conversation's recent past, then exit")
 
+    inject = commands.add_parser("inject", help="motion nobody ran, to test the rig downstream")
+    inject.add_argument("speed_cm_s", type=float, help="signed; positive is forward")
+    inject.add_argument("--ms", type=int, default=2000, help="how long; 0 ends a running injection")
+    inject.add_argument("--axis", default="", help="the first if none named")
     zero = commands.add_parser("zero", help="move the API origin")
     zero.add_argument("axes", nargs="*", help="which axes; all of them if none named")
     position = commands.add_parser(
@@ -294,6 +298,8 @@ def _run(rig: MousewheeldClient, arguments) -> int:
         case "wire-log":
             for line in rig.wire_log():
                 _print_line(line)
+        case "inject":
+            _print(rig.inject_motion(arguments.speed_cm_s, arguments.ms, arguments.axis))
         case "zero":
             _print(rig.zero_position(tuple(arguments.axes)))
         case "position":

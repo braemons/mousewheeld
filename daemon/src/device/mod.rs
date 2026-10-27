@@ -49,6 +49,7 @@ use crate::model::device::{
 use crate::model::state::{
     AxisState, LinkHealth, LinkState, RigState, Sample, StreamFrame, ZoneHitEvent,
 };
+use crate::model::{ApiError, ApiResult};
 use crate::model::zone_set::{ArmOrigin, FireRule, OutputAction, ZoneMetric, ZoneStatus};
 use crate::publish::SegmentPublisher;
 use crate::zones::{CompiledZone, CompiledZoneSet};
@@ -67,6 +68,10 @@ const STALE_AFTER: Duration = Duration::from_millis(500);
 /// How long an arm waits for the board to say `armed`. Long enough for a link
 /// that is merely busy; short enough that an HTTP handler does not hang on a
 /// board that has gone away.
+/// The board's limits on `Inject` (`firmware/core/device.cpp`).
+const MOST_INJECTED_COUNTS_PER_S: i32 = 1_000_000;
+const LONGEST_INJECTION_MS: u32 = 600_000;
+
 const ARM_ACK_TIMEOUT: Duration = Duration::from_millis(750);
 /// The span the host's own velocity is measured over. Not the gap between two
 /// samples: a wheel publishes whole counts, so a slope across one 2 ms step is
@@ -107,7 +112,7 @@ pub enum Backend {
     Port { path: String, baud: u32 },
     /// A pty with a simulated board on the far end — the same link code, and a
     /// board that can be wrong in the ways a real one is.
-    Simulated,
+    Simulated { wheel: board_simulator::SimulatedWheel },
 }
 
 struct AxisRuntime {
@@ -122,6 +127,7 @@ struct AxisRuntime {
     distance: i64,
     host_velocity_cm_s: f64,
     device_velocity_cm_s: f64,
+    injecting: bool,
     /// Added after the sign, so that turning `invert` over while the daemon
     /// runs reverses the direction from then on without moving anything: see
     /// [`Device::set_invert`].
@@ -245,6 +251,7 @@ impl Device {
                         distance: 0,
                         host_velocity_cm_s: 0.0,
                         device_velocity_cm_s: 0.0,
+                        injecting: false,
                         bias: 0,
                     })
                     .collect(),
@@ -299,7 +306,7 @@ impl Device {
                 self.spawn_reader(FrameReader::new(fd, DEFAULT_MAX_FRAME));
                 path.clone()
             }
-            Backend::Simulated => {
+            Backend::Simulated { wheel } => {
                 let counts_per_cm = self
                     .inner
                     .lock()
@@ -309,7 +316,7 @@ impl Device {
                     .map(|axis| axis.counts_per_cm)
                     .unwrap_or(86.92);
                 let (board_side, host_path) = pty_pair()?;
-                board_simulator::BoardSimulator::spawn(board_side, counts_per_cm)?;
+                board_simulator::BoardSimulator::spawn(board_side, counts_per_cm, *wheel)?;
                 let fd = open_port(host_path.to_str().unwrap_or_default(), 0)?;
                 *self.writer.lock().unwrap() = Some(FrameWriter::new(duplicate(&fd)?));
                 self.spawn_reader(FrameReader::new(fd, DEFAULT_MAX_FRAME));
@@ -641,6 +648,7 @@ impl Device {
                 let counts = axis.host(*counts);
                 axis.distance += (counts - axis.counts).abs();
                 axis.counts = counts;
+                axis.injecting = sample.injecting & (1 << index) != 0;
                 if let Some(velocity) = sample.v.get(index) {
                     let velocity = axis.sign() * velocity;
                     axis.device_velocity_cm_s = velocity as f64 / axis.counts_per_cm;
@@ -871,6 +879,43 @@ impl Device {
         // and the host will maintain the correct origin. The board's view of origin
         // will be corrected on the next state report.
         self.send(commands::zero(self.next_message_id(), &indices));
+    }
+
+    /// Move an axis nobody is moving: `speed_cm_s` for `duration_ms`, added by
+    /// the board to its counter. 0 ms ends the injection running.
+    ///
+    /// Checked here against the board's own limits, because the link does not
+    /// wait for an answer: a refusal the board sent would reach only the log.
+    pub fn inject_motion(&self, axis_name: &str, speed_cm_s: f64, duration_ms: u32) -> ApiResult<()> {
+        let (index, counts_per_s) = {
+            let inner = self.inner.lock().unwrap();
+            if !inner.connected {
+                return Err(ApiError::no_device());
+            }
+            let index = if axis_name.is_empty() {
+                0
+            } else {
+                inner
+                    .axes
+                    .iter()
+                    .position(|axis| axis.name == axis_name)
+                    .ok_or_else(|| ApiError::not_found("no_such_axis", format!("no axis named {axis_name}")))?
+            };
+            let axis = inner.axes.get(index).ok_or_else(|| ApiError::not_found("no_such_axis", "no axes"))?;
+            // The board counts uninverted: forward on an inverted axis is
+            // backwards on its counter.
+            let counts_per_s = (axis.sign() as f64) * speed_cm_s * axis.counts_per_cm;
+            (index, counts_per_s.round())
+        };
+        let refuse = |detail: String| Err(ApiError::refused("bad_injection", detail).about(axis_name.to_string()));
+        if !counts_per_s.is_finite() || counts_per_s.abs() > f64::from(MOST_INJECTED_COUNTS_PER_S) {
+            return refuse(format!("at most {MOST_INJECTED_COUNTS_PER_S} counts a second"));
+        }
+        if duration_ms > LONGEST_INJECTION_MS {
+            return refuse(format!("at most {LONGEST_INJECTION_MS} ms"));
+        }
+        self.send(commands::inject(self.next_message_id(), index, counts_per_s as i32, duration_ms));
+        Ok(())
     }
 
     /// Upload a compiled set, arm it, and wait for the board to say so.
@@ -1216,6 +1261,7 @@ fn axis_state(axis: &AxisRuntime) -> AxisState {
         distance_cm: axis.distance as f64 / axis.counts_per_cm,
         velocity_cm_s: axis.host_velocity_cm_s,
         device_velocity_cm_s: axis.device_velocity_cm_s,
+        injecting: axis.injecting,
     }
 }
 
@@ -1245,7 +1291,7 @@ mod tests {
     }
 
     fn sample(seq: u64, c: i64) -> WireSample {
-        WireSample { seq, t_us: seq * 2000, c: vec![c], v: vec![] }
+        WireSample { seq, t_us: seq * 2000, c: vec![c], v: vec![], injecting: 0 }
     }
 
     #[test]

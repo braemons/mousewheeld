@@ -15,6 +15,8 @@ struct SampleRecord {
   Microseconds t_us;
   int64_t counts[kMaxAxes];
   int64_t velocity[kMaxAxes];
+  // Bit i: an injection moved axis i.
+  uint32_t injecting;
 };
 
 struct ZoneHitRecord {

@@ -442,6 +442,19 @@ pub struct Error {
     #[prost(string, tag = "3")]
     pub context: ::prost::alloc::string::String,
 }
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct InjectMotionRequest {
+    /// Which axis. Empty means the first.
+    #[prost(string, tag = "1")]
+    pub axis: ::prost::alloc::string::String,
+    /// Signed, in the axis's own direction: positive is forward as `position_cm`
+    /// counts it, whichever way the encoder is mounted.
+    #[prost(double, tag = "2")]
+    pub speed_cm_s: f64,
+    /// How long, from the board's next scan. 0 ends the injection running.
+    #[prost(uint32, tag = "3")]
+    pub duration_ms: u32,
+}
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct WatchStateRequest {
     /// Frames per second to push. Query parameter, not a body.
@@ -504,6 +517,10 @@ pub struct AxisState {
     /// that silently kept one could not be checked against the other.
     #[prost(double, tag = "6")]
     pub device_velocity_cm_s: f64,
+    /// An `InjectMotion` was moving this axis in the last sample: the motion is
+    /// not the animal's.
+    #[prost(bool, tag = "7")]
+    pub injecting: bool,
 }
 /// Whether what the rest of the answer says can be believed.
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]

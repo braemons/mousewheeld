@@ -180,6 +180,16 @@ export class DaemonApiClient {
     return this.call(this.state, StateService.method.zeroPosition, axes === undefined ? {} : { axes });
   }
 
+  /// Motion nobody ran, added by the board to an axis's counter. `axis` ""
+  /// is the first; 0 ms ends the injection running.
+  injectMotion(axis, speedCmS, durationMs) {
+    return this.call(this.state, StateService.method.injectMotion, {
+      axis,
+      speed_cm_s: speedCmS,
+      duration_ms: durationMs,
+    });
+  }
+
   // -------------------------------------------------------- calibration ---
 
   readCalibration() {

@@ -100,6 +100,7 @@ daemon's API, `StateService.WatchState`.
 | `ping` | `{}` | `pong` |
 | `state` | `{}` | `state_report` |
 | `debug` | `{on}` | `ok` |
+| `inject` | `{axis, counts_per_s, duration_ms}` — added to the axis's counter, raw and uninverted, from the next scan; `duration_ms: 0` ends it | `ok`, or `error`/`bad_axis`, `bad_injection` |
 
 The set's **name** goes with it because `hello_ack` reports a flashed set by
 name, and a board that was only ever told a version cannot do that. It is the
@@ -182,6 +183,9 @@ DeviceMessage{message_id: 903, sample: {seq: 41822, t_us: 8391204, c: [173884]}}
   a fixed window in the scan. Coarser than the host's, and the one the analog
   output and the zone evaluation were actually done against, which is why both
   are recorded and never averaged together.
+- **`injecting` is a mask of the axes an `inject` moved** in that sample's
+  scan. The motion is in `c` and `v` like any other; this is how a record
+  knows it was not the animal's.
 - **At least the display rate**, on a rig whose camera follows the wheel: 250 Hz
   for 120 Hz, 500 Hz for 240 Hz. Below it, some frames see no new sample and the
   next sees two, and the corridor moves in uneven steps at exactly the speeds a

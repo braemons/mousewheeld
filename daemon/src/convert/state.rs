@@ -27,6 +27,7 @@ pub fn axis_state_to_wire(axis: m::AxisState) -> wire::AxisState {
         distance_cm: axis.distance_cm,
         velocity_cm_s: axis.velocity_cm_s,
         device_velocity_cm_s: axis.device_velocity_cm_s,
+        injecting: axis.injecting,
     }
 }
 

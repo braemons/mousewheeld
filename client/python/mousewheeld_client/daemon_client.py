@@ -183,6 +183,14 @@ class MousewheeldClient:
         )
         return (convert.stream_frame_from_wire(frame) for frame in frames)
 
+    def inject_motion(self, speed_cm_s: float, duration_ms: int, axis: str = "") -> RigState:
+        """Motion nobody ran: the board adds `speed_cm_s` to the axis's counter
+        for `duration_ms`, so zones, their TTLs and the corridor see the wheel
+        turn. Positive is forward. `duration_ms=0` ends it. The first axis if
+        none is named."""
+        request = state_pb2.InjectMotionRequest(axis=axis, speed_cm_s=speed_cm_s, duration_ms=duration_ms)
+        return convert.rig_state_from_wire(call(lambda: self._state.InjectMotion(request)))
+
     def zero_position(self, axes: tuple[str, ...] = ()) -> RigState:
         """Move the API origin — every axis, or the ones named.
 

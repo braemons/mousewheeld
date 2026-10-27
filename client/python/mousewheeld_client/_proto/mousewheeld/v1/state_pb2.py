@@ -24,35 +24,37 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1amousewheeld/v1/state.proto\x12\x0emousewheeld.v1\"-\n\x11WatchStateRequest\x12\x18\n\x07rate_hz\x18\x01 \x01(\rR\x07rate_hz\"\x1b\n\x0bZeroRequest\x12\x0c\n\x04\x61xes\x18\x01 \x03(\t\"D\n\x12SetPositionRequest\x12\x0c\n\x04\x61xes\x18\x01 \x03(\t\x12 \n\x0bposition_cm\x18\x02 \x03(\x01R\x0bposition_cm\"\x88\x01\n\x08RigState\x12\'\n\x04\x61xes\x18\x01 \x03(\x0b\x32\x19.mousewheeld.v1.AxisState\x12*\n\x06health\x18\x02 \x01(\x0b\x32\x1a.mousewheeld.v1.LinkHealth\x12\'\n\x04link\x18\x03 \x01(\x0b\x32\x19.mousewheeld.v1.LinkState\"\x1e\n\tLinkState\x12\x11\n\tconnected\x18\x01 \x01(\x08\"\xc7\x01\n\tAxisState\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x0e\n\x06\x63ounts\x18\x02 \x01(\x03\x12 \n\x0bposition_cm\x18\x03 \x01(\x01R\x0bposition_cm\x12 \n\x0b\x64istance_cm\x18\x04 \x01(\x01R\x0b\x64istance_cm\x12$\n\rvelocity_cm_s\x18\x05 \x01(\x01R\rvelocity_cm_s\x12\x32\n\x14\x64\x65vice_velocity_cm_s\x18\x06 \x01(\x01R\x14\x64\x65vice_velocity_cm_s\"\x83\x01\n\nLinkHealth\x12\x1a\n\x08seq_gaps\x18\x01 \x01(\x04R\x08seq_gaps\x12\x1e\n\nring_drops\x18\x02 \x01(\x04R\nring_drops\x12*\n\x10measured_rate_hz\x18\x03 \x01(\x01R\x10measured_rate_hz\x12\r\n\x05stale\x18\x04 \x01(\x08\"|\n\x0bStreamFrame\x12(\n\x06sample\x18\x01 \x01(\x0b\x32\x16.mousewheeld.v1.SampleH\x00\x12:\n\x08zone_hit\x18\x02 \x01(\x0b\x32\x1c.mousewheeld.v1.ZoneHitEventH\x00R\x08zone_hitB\x07\n\x05\x66rame\"\xac\x01\n\x06Sample\x12\x0b\n\x03seq\x18\x01 \x01(\x04\x12\x1c\n\tdevice_us\x18\x02 \x01(\x04R\tdevice_us\x12,\n\x11host_monotonic_ns\x18\x03 \x01(\x04R\x11host_monotonic_ns\x12 \n\x0blost_before\x18\x04 \x01(\x04R\x0blost_before\x12\'\n\x04\x61xes\x18\x05 \x03(\x0b\x32\x19.mousewheeld.v1.AxisState\"\x91\x01\n\x0cZoneHitEvent\x12\x0c\n\x04zone\x18\x01 \x01(\t\x12\x16\n\x06\x61rm_id\x18\x02 \x01(\rR\x06\x61rm_id\x12\x0b\n\x03seq\x18\x03 \x01(\x04\x12,\n\x11host_monotonic_ns\x18\x04 \x01(\x04R\x11host_monotonic_ns\x12 \n\x0bposition_cm\x18\x05 \x01(\x01R\x0bposition_cm\"\x12\n\x10ReadStateRequest2\xbb\x02\n\x0cStateService\x12G\n\tReadState\x12 .mousewheeld.v1.ReadStateRequest\x1a\x18.mousewheeld.v1.RigState\x12N\n\nWatchState\x12!.mousewheeld.v1.WatchStateRequest\x1a\x1b.mousewheeld.v1.StreamFrame0\x01\x12\x45\n\x0cZeroPosition\x12\x1b.mousewheeld.v1.ZeroRequest\x1a\x18.mousewheeld.v1.RigState\x12K\n\x0bSetPosition\x12\".mousewheeld.v1.SetPositionRequest\x1a\x18.mousewheeld.v1.RigStateb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1amousewheeld/v1/state.proto\x12\x0emousewheeld.v1\"e\n\x13InjectMotionRequest\x12\x0c\n\x04\x61xis\x18\x01 \x01(\t\x12\x1e\n\nspeed_cm_s\x18\x02 \x01(\x01R\nspeed_cm_s\x12 \n\x0b\x64uration_ms\x18\x03 \x01(\rR\x0b\x64uration_ms\"-\n\x11WatchStateRequest\x12\x18\n\x07rate_hz\x18\x01 \x01(\rR\x07rate_hz\"\x1b\n\x0bZeroRequest\x12\x0c\n\x04\x61xes\x18\x01 \x03(\t\"D\n\x12SetPositionRequest\x12\x0c\n\x04\x61xes\x18\x01 \x03(\t\x12 \n\x0bposition_cm\x18\x02 \x03(\x01R\x0bposition_cm\"\x88\x01\n\x08RigState\x12\'\n\x04\x61xes\x18\x01 \x03(\x0b\x32\x19.mousewheeld.v1.AxisState\x12*\n\x06health\x18\x02 \x01(\x0b\x32\x1a.mousewheeld.v1.LinkHealth\x12\'\n\x04link\x18\x03 \x01(\x0b\x32\x19.mousewheeld.v1.LinkState\"\x1e\n\tLinkState\x12\x11\n\tconnected\x18\x01 \x01(\x08\"\xda\x01\n\tAxisState\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x0e\n\x06\x63ounts\x18\x02 \x01(\x03\x12 \n\x0bposition_cm\x18\x03 \x01(\x01R\x0bposition_cm\x12 \n\x0b\x64istance_cm\x18\x04 \x01(\x01R\x0b\x64istance_cm\x12$\n\rvelocity_cm_s\x18\x05 \x01(\x01R\rvelocity_cm_s\x12\x32\n\x14\x64\x65vice_velocity_cm_s\x18\x06 \x01(\x01R\x14\x64\x65vice_velocity_cm_s\x12\x11\n\tinjecting\x18\x07 \x01(\x08\"\x83\x01\n\nLinkHealth\x12\x1a\n\x08seq_gaps\x18\x01 \x01(\x04R\x08seq_gaps\x12\x1e\n\nring_drops\x18\x02 \x01(\x04R\nring_drops\x12*\n\x10measured_rate_hz\x18\x03 \x01(\x01R\x10measured_rate_hz\x12\r\n\x05stale\x18\x04 \x01(\x08\"|\n\x0bStreamFrame\x12(\n\x06sample\x18\x01 \x01(\x0b\x32\x16.mousewheeld.v1.SampleH\x00\x12:\n\x08zone_hit\x18\x02 \x01(\x0b\x32\x1c.mousewheeld.v1.ZoneHitEventH\x00R\x08zone_hitB\x07\n\x05\x66rame\"\xac\x01\n\x06Sample\x12\x0b\n\x03seq\x18\x01 \x01(\x04\x12\x1c\n\tdevice_us\x18\x02 \x01(\x04R\tdevice_us\x12,\n\x11host_monotonic_ns\x18\x03 \x01(\x04R\x11host_monotonic_ns\x12 \n\x0blost_before\x18\x04 \x01(\x04R\x0blost_before\x12\'\n\x04\x61xes\x18\x05 \x03(\x0b\x32\x19.mousewheeld.v1.AxisState\"\x91\x01\n\x0cZoneHitEvent\x12\x0c\n\x04zone\x18\x01 \x01(\t\x12\x16\n\x06\x61rm_id\x18\x02 \x01(\rR\x06\x61rm_id\x12\x0b\n\x03seq\x18\x03 \x01(\x04\x12,\n\x11host_monotonic_ns\x18\x04 \x01(\x04R\x11host_monotonic_ns\x12 \n\x0bposition_cm\x18\x05 \x01(\x01R\x0bposition_cm\"\x12\n\x10ReadStateRequest2\x8a\x03\n\x0cStateService\x12G\n\tReadState\x12 .mousewheeld.v1.ReadStateRequest\x1a\x18.mousewheeld.v1.RigState\x12N\n\nWatchState\x12!.mousewheeld.v1.WatchStateRequest\x1a\x1b.mousewheeld.v1.StreamFrame0\x01\x12\x45\n\x0cZeroPosition\x12\x1b.mousewheeld.v1.ZeroRequest\x1a\x18.mousewheeld.v1.RigState\x12K\n\x0bSetPosition\x12\".mousewheeld.v1.SetPositionRequest\x1a\x18.mousewheeld.v1.RigState\x12M\n\x0cInjectMotion\x12#.mousewheeld.v1.InjectMotionRequest\x1a\x18.mousewheeld.v1.RigStateb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'mousewheeld.v1.state_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_WATCHSTATEREQUEST']._serialized_start=46
-  _globals['_WATCHSTATEREQUEST']._serialized_end=91
-  _globals['_ZEROREQUEST']._serialized_start=93
-  _globals['_ZEROREQUEST']._serialized_end=120
-  _globals['_SETPOSITIONREQUEST']._serialized_start=122
-  _globals['_SETPOSITIONREQUEST']._serialized_end=190
-  _globals['_RIGSTATE']._serialized_start=193
-  _globals['_RIGSTATE']._serialized_end=329
-  _globals['_LINKSTATE']._serialized_start=331
-  _globals['_LINKSTATE']._serialized_end=361
-  _globals['_AXISSTATE']._serialized_start=364
-  _globals['_AXISSTATE']._serialized_end=563
-  _globals['_LINKHEALTH']._serialized_start=566
-  _globals['_LINKHEALTH']._serialized_end=697
-  _globals['_STREAMFRAME']._serialized_start=699
-  _globals['_STREAMFRAME']._serialized_end=823
-  _globals['_SAMPLE']._serialized_start=826
-  _globals['_SAMPLE']._serialized_end=998
-  _globals['_ZONEHITEVENT']._serialized_start=1001
-  _globals['_ZONEHITEVENT']._serialized_end=1146
-  _globals['_READSTATEREQUEST']._serialized_start=1148
-  _globals['_READSTATEREQUEST']._serialized_end=1166
-  _globals['_STATESERVICE']._serialized_start=1169
-  _globals['_STATESERVICE']._serialized_end=1484
+  _globals['_INJECTMOTIONREQUEST']._serialized_start=46
+  _globals['_INJECTMOTIONREQUEST']._serialized_end=147
+  _globals['_WATCHSTATEREQUEST']._serialized_start=149
+  _globals['_WATCHSTATEREQUEST']._serialized_end=194
+  _globals['_ZEROREQUEST']._serialized_start=196
+  _globals['_ZEROREQUEST']._serialized_end=223
+  _globals['_SETPOSITIONREQUEST']._serialized_start=225
+  _globals['_SETPOSITIONREQUEST']._serialized_end=293
+  _globals['_RIGSTATE']._serialized_start=296
+  _globals['_RIGSTATE']._serialized_end=432
+  _globals['_LINKSTATE']._serialized_start=434
+  _globals['_LINKSTATE']._serialized_end=464
+  _globals['_AXISSTATE']._serialized_start=467
+  _globals['_AXISSTATE']._serialized_end=685
+  _globals['_LINKHEALTH']._serialized_start=688
+  _globals['_LINKHEALTH']._serialized_end=819
+  _globals['_STREAMFRAME']._serialized_start=821
+  _globals['_STREAMFRAME']._serialized_end=945
+  _globals['_SAMPLE']._serialized_start=948
+  _globals['_SAMPLE']._serialized_end=1120
+  _globals['_ZONEHITEVENT']._serialized_start=1123
+  _globals['_ZONEHITEVENT']._serialized_end=1268
+  _globals['_READSTATEREQUEST']._serialized_start=1270
+  _globals['_READSTATEREQUEST']._serialized_end=1288
+  _globals['_STATESERVICE']._serialized_start=1291
+  _globals['_STATESERVICE']._serialized_end=1685
 # @@protoc_insertion_point(module_scope)

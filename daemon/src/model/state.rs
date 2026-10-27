@@ -30,6 +30,8 @@ pub struct AxisState {
     /// scan resolution. Coarser, and the one the analog output and the zone
     /// evaluation were actually done against.
     pub device_velocity_cm_s: f64,
+    /// An injection, not the animal, was moving the axis in the last sample.
+    pub injecting: bool,
 }
 
 /// Whether what the rest of this answer says can be believed.

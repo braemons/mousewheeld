@@ -78,6 +78,9 @@ class Device {
   // Bit i: axis i. 0 zeroes every axis.
   Refusal zero(uint32_t axes);
   Refusal set_analog(const AnalogConfig& config);
+  // Add `counts_per_s` to `axis` for `duration_ms`, from the next scan. 0 ms
+  // ends the injection running.
+  Refusal inject(uint32_t axis, int32_t counts_per_s, uint32_t duration_ms, Microseconds now);
 
   // ---------------------------------------------------- loop(): the rest ---
   // The value for the DAC, from the latest counts.
@@ -108,8 +111,18 @@ class Device {
   uint32_t stream_rate_hz_ = 0;
   bool velocity_on_samples_ = false;
 
+  // What Inject adds to each axis. Written by loop() under the lock.
+  struct Injection {
+    int32_t counts_per_s = 0;
+    Microseconds until = 0;
+    // Counts·µs not yet whole counts, so a slow injection still moves.
+    int64_t residue = 0;
+  };
+  Injection injections_[kMaxAxes];
+
   // The scan's own.
   uint32_t stream_phase_ = 0;
+  Microseconds last_injected_ = 0;
   uint64_t sample_seq_ = 0;
   uint64_t zone_hit_seq_ = 0;
   Microseconds last_scan_ = 0;

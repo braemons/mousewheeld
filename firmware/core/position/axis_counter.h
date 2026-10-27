@@ -29,6 +29,11 @@ class AxisCounter {
     delta %= m;
     if (delta >= m / 2) delta -= m;
     if (delta < -m / 2) delta += m;
+    return move(delta);
+  }
+
+  // Move by `delta` raw counts, as a reading that changed by it would.
+  bool move(int64_t delta) {
     if (delta == 0) return false;
     if (invert_) delta = -delta;
     counts_ += delta;

@@ -241,3 +241,24 @@ def test_a_daemon_that_is_not_there_is_not_connected():
     with MousewheeldClient("127.0.0.1:1") as absent, pytest.raises(DaemonOrBoardIsUnavailable) as refusal:
         absent.state()
     assert refusal.value.retryable
+
+
+def test_injected_motion_moves_the_wheel_and_says_so(wheel):
+    before = wheel.state().axis("wheel")
+    wheel.inject_motion(-200.0, 400)
+    time.sleep(0.2)
+    during = wheel.state().axis("wheel")
+    assert during.injecting
+    # Backwards at 200 cm/s outruns any bout the simulated animal is in.
+    assert during.position_cm < before.position_cm
+    time.sleep(0.4)
+    assert not wheel.state().axis("wheel").injecting
+
+
+def test_an_injection_is_refused_before_it_reaches_the_board(wheel):
+    with pytest.raises(DaemonRefusedTheRequest) as refusal:
+        wheel.inject_motion(1e9, 100)
+    assert (refusal.value.error, refusal.value.context) == ("bad_injection", "")
+    with pytest.raises(DaemonRefusedTheRequest) as refusal:
+        wheel.inject_motion(10.0, 100, axis="ball")
+    assert refusal.value.status == "not_found"

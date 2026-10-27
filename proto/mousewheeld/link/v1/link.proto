@@ -47,6 +47,7 @@ message HostMessage {
         Ping ping = 22;
         StateRequest state = 23;
         Debug debug = 24;
+        Inject inject = 25;
     }
 }
 
@@ -205,6 +206,18 @@ message Debug {
     bool on = 1;
 }
 
+// Motion nobody ran: the board adds `counts_per_s` to an axis's counter,
+// raw and uninverted like the counter itself, for `duration_ms` from the next
+// scan. For testing a rig end to end without an animal. Everything downstream
+// of the counter sees it as motion: samples, velocity, the zones and their
+// lines. Replaces an injection still running on that axis; `duration_ms` 0
+// ends it. Samples say which axes it was moving (`Sample.injecting`).
+message Inject {
+    uint32 axis = 1;
+    sint32 counts_per_s = 2;
+    uint32 duration_ms = 3;
+}
+
 // ------------------------------------------------------------ device → host ---
 
 message FlashedSet {
@@ -237,6 +250,8 @@ message Sample {
     repeated sint64 c = 3;
     // Counts per second over the board's window. Empty unless asked for.
     repeated sint64 v = 4;
+    // Bit i: an `Inject` moved axis i in this sample's scan.
+    uint32 injecting = 5;
 }
 
 message ZoneHit {
